@@ -1,0 +1,78 @@
+{
+  "workbuddy": {
+    "processNames": [
+      "WorkBuddy"
+    ],
+    "newChat": "^(新建任务|新对话|New task|New chat)$",
+    "send": "^(发送|发送消息|Send|Send message)$",
+    "busy": "^(停止|停止生成|停止回答|Stop|Stop generating)$",
+    "complete": "^(已完成([，,， ].*)?|任务完成|Task completed|Completed)$",
+    "chatId": "",
+    "editorId": "",
+    "blank": "^(WorkBuddy, 我帮你|今天帮你做些什么.*|你想完成什么.*|有什么可以帮.*|开始新任务.*|What would you like.*|How can I help.*)$",
+    "launchArgs": [
+      "--force-renderer-accessibility=complete",
+      "--enable-features=UiaProvider"
+    ],
+    "windowTitle": "^WorkBuddy$",
+    "placeholder": "^今天帮你做些什么？@ 添加上下文，/调用技能与指令$",
+    "replyAfterComplete": true,
+    "replyEndClass": "(?:^| )_copyButton_[A-Za-z0-9]+_\\d+(?: |$)"
+  },
+  "doubao": {
+    "processNames": [
+      "Doubao"
+    ],
+    "newChat": "^(新对话(?: Ctrl Shift K)?|开启新对话|New chat)$",
+    "send": "^(发送|发送消息|Send|Send message)$",
+    "busy": "^(停止|停止生成|停止回答|Stop|Stop generating)$",
+    "complete": "^(朗读|朗读全文|Read aloud)$",
+    "chatId": "",
+    "editorId": "",
+    "blank": "^(有什么(?:我能|可以)帮.*|今天有什么可以帮.*|和豆包聊聊.*|How can I help.*)$",
+    "windowTitle": "(^豆包$| - 豆包$)",
+    "placeholder": "^发消息或按住空格说话\\.\\.\\.$",
+    "launchArgs": [
+      "--force-renderer-accessibility=complete",
+      "--enable-features=UiaProvider"
+    ],
+    "sendClass": "(?:^| )!?bg-g-send-msg-btn-bg(?: |$)",
+    "replyDecorationClass": "(?s)^(?=.*(?:^|\\s)self-center(?:\\s|$))(?=.*(?:^|\\s)whitespace-nowrap(?:\\s|$))(?=.*(?:^|\\s)text-dbx-text-secondary(?:\\s|$))(?=.*(?:^|\\s)mr-14(?:\\s|$)).*$"
+  },
+  "deepseek": {
+    "processNames": [
+      "DeepSeek Harness"
+    ],
+    "newChat": "^(新建会话|New chat)$",
+    "send": "^(发送|Send)$",
+    "busy": "^(停止|Stop)$",
+    "complete": "^(已完成，用时.*|Completed)$",
+    "chatId": "",
+    "editorId": "",
+    "blank": "^(描述你想要构建的内容.*|What would you like.*)$"
+  },
+  "claude": {
+    "processNames": [
+      "Claude"
+    ],
+    "newChat": "^(新对话|New chat)$",
+    "send": "^(发送|Send message|Send)$",
+    "busy": "^(停止|Stop response|Stop)$",
+    "complete": "^(重试|Retry)$",
+    "chatId": "",
+    "editorId": "",
+    "blank": "^(How can I help.*|有什么可以帮.*)$"
+  },
+  "codex": {
+    "processNames": [
+      "Codex"
+    ],
+    "newChat": "^(新任务|New task)$",
+    "send": "^(发送|Send)$",
+    "busy": "^(停止|Stop)$",
+    "complete": "^(任务完成|Task completed)$",
+    "chatId": "",
+    "editorId": "",
+    "blank": "^(What should we build.*|你想构建什么.*)$"
+  }
+}

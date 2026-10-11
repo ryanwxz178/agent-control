@@ -1,0 +1,452 @@
+[
+  {
+    "role": "AXButton",
+    "name": "",
+    "value": "",
+    "description": "复制",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "已完成本轮思考与执行 16:48 完成 耗时 13.7 秒",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "已完成本轮思考与执行",
+    "description": "",
+    "parent": 1,
+    "enabled": "true",
+    "checked": "已完成本轮思考与执行"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "16:48 完成 耗时 13.7 秒",
+    "description": "",
+    "parent": 1,
+    "enabled": "true",
+    "checked": "16:48 完成 耗时 13.7 秒"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 4,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "好的，我先问您一次确认，选完就直接生成。",
+    "description": "",
+    "parent": 5,
+    "enabled": "true",
+    "checked": "好的，我先问您一次确认，选完就直接生成。"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 4,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "",
+    "value": "",
+    "description": "仅复制文本",
+    "parent": 7,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "",
+    "value": "",
+    "description": "带格式复制",
+    "parent": 7,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "",
+    "value": "",
+    "description": "收起详情",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "交互式问答 · 需要确认1个问题",
+    "description": "",
+    "parent": 11,
+    "enabled": "true",
+    "checked": "交互式问答 · 需要确认1个问题"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "16:48",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": "16:48"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "等待中",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": "等待中"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "跳过问答",
+    "value": "",
+    "description": "",
+    "parent": 15,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "图片主题",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "请选择要生成的图片主题（选完即生成，不再二次确认）：",
+    "description": "",
+    "parent": 18,
+    "enabled": "true",
+    "checked": "请选择要生成的图片主题（选完即生成，不再二次确认）："
+  },
+  {
+    "role": "AXRadioGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "山水风景插画 国风意境的水墨或插画风景",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 21,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "山水风景插画",
+    "description": "",
+    "parent": 22,
+    "enabled": "true",
+    "checked": "山水风景插画"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 21,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "国风意境的水墨或插画风景",
+    "description": "",
+    "parent": 24,
+    "enabled": "true",
+    "checked": "国风意境的水墨或插画风景"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "科技感AI主题 未来感、数据流、智能体概念图",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 26,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "科技感AI主题",
+    "description": "",
+    "parent": 27,
+    "enabled": "true",
+    "checked": "科技感AI主题"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 26,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "未来感、数据流、智能体概念图",
+    "description": "",
+    "parent": 29,
+    "enabled": "true",
+    "checked": "未来感、数据流、智能体概念图"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "城市夜景 都市霓虹、高楼夜景插画",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 31,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "城市夜景",
+    "description": "",
+    "parent": 32,
+    "enabled": "true",
+    "checked": "城市夜景"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 31,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "都市霓虹、高楼夜景插画",
+    "description": "",
+    "parent": 34,
+    "enabled": "true",
+    "checked": "都市霓虹、高楼夜景插画"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "可爱卡通动物 治愈系卡通风格插画 可补充说明，不需要可留空；回车进入下一题",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "1"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 36,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "可爱卡通动物",
+    "description": "",
+    "parent": 37,
+    "enabled": "true",
+    "checked": "可爱卡通动物"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 36,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "治愈系卡通风格插画",
+    "description": "",
+    "parent": 39,
+    "enabled": "true",
+    "checked": "治愈系卡通风格插画"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 36,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXTextArea",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 41,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "其他（自定义输入） 以上选项均不符，自行填写",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 43,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "其他（自定义输入）",
+    "description": "",
+    "parent": 44,
+    "enabled": "true",
+    "checked": "其他（自定义输入）"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 43,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "以上选项均不符，自行填写",
+    "description": "",
+    "parent": 46,
+    "enabled": "true",
+    "checked": "以上选项均不符，自行填写"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "提交全部答案（1/1 已回答）",
+    "value": "",
+    "description": "",
+    "parent": 48,
+    "enabled": "true",
+    "checked": ""
+  }
+]

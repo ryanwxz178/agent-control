@@ -1,0 +1,371 @@
+[
+  {
+    "role": "AXButton",
+    "name": "已完成本轮思考与执行 16:19 完成 耗时 6.4 秒",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "已完成本轮思考与执行",
+    "description": "",
+    "parent": 0,
+    "enabled": "true",
+    "checked": "已完成本轮思考与执行"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "16:19 完成 耗时 6.4 秒",
+    "description": "",
+    "parent": 0,
+    "enabled": "true",
+    "checked": "16:19 完成 耗时 6.4 秒"
+  },
+  {
+    "role": "AXButton",
+    "name": "",
+    "value": "",
+    "description": "收起详情",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "交互式问答 · 需要确认1个问题",
+    "description": "",
+    "parent": 4,
+    "enabled": "true",
+    "checked": "交互式问答 · 需要确认1个问题"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "16:19",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": "16:19"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "等待中",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": "等待中"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "跳过问答",
+    "value": "",
+    "description": "",
+    "parent": 8,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "图片内容确认",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "你想生成什么样的图片？请告诉我主题，我会按你的要求直接生成，不再反复确认。",
+    "description": "",
+    "parent": 11,
+    "enabled": "true",
+    "checked": "你想生成什么样的图片？请告诉我主题，我会按你的要求直接生成，不再反复确认。"
+  },
+  {
+    "role": "AXRadioGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "风景插画 自然风光、山水、星空等唯美插画风格",
+    "value": "",
+    "description": "",
+    "parent": 13,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 14,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "风景插画",
+    "description": "",
+    "parent": 15,
+    "enabled": "true",
+    "checked": "风景插画"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 14,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "自然风光、山水、星空等唯美插画风格",
+    "description": "",
+    "parent": 17,
+    "enabled": "true",
+    "checked": "自然风光、山水、星空等唯美插画风格"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "商务海报 活动宣传、产品推广等商务用途海报",
+    "value": "",
+    "description": "",
+    "parent": 13,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 19,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "商务海报",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "商务海报"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 19,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "活动宣传、产品推广等商务用途海报",
+    "description": "",
+    "parent": 22,
+    "enabled": "true",
+    "checked": "活动宣传、产品推广等商务用途海报"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "科技概念图 AI、数据、未来科技等科技感配图",
+    "value": "",
+    "description": "",
+    "parent": 13,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 24,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "科技概念图",
+    "description": "",
+    "parent": 25,
+    "enabled": "true",
+    "checked": "科技概念图"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 24,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "AI、数据、未来科技等科技感配图",
+    "description": "",
+    "parent": 27,
+    "enabled": "true",
+    "checked": "AI、数据、未来科技等科技感配图"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "头像/壁纸 个人头像、手机或电脑壁纸风格图片",
+    "value": "",
+    "description": "",
+    "parent": 13,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 29,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "头像/壁纸",
+    "description": "",
+    "parent": 30,
+    "enabled": "true",
+    "checked": "头像/壁纸"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 29,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "个人头像、手机或电脑壁纸风格图片",
+    "description": "",
+    "parent": 32,
+    "enabled": "true",
+    "checked": "个人头像、手机或电脑壁纸风格图片"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "其他（自定义输入） 以上选项均不符，自行填写",
+    "value": "",
+    "description": "",
+    "parent": 13,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 34,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "其他（自定义输入）",
+    "description": "",
+    "parent": 35,
+    "enabled": "true",
+    "checked": "其他（自定义输入）"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 34,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "以上选项均不符，自行填写",
+    "description": "",
+    "parent": 37,
+    "enabled": "true",
+    "checked": "以上选项均不符，自行填写"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "暂不回答并提交（0/1 已回答）",
+    "value": "",
+    "description": "",
+    "parent": 39,
+    "enabled": "true",
+    "checked": ""
+  }
+]

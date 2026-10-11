@@ -1,0 +1,17 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('app/src/main/assets/desktop-chat.js','utf8');
+const node=(role,children=[],value='')=>({role,children,value,isEqual(other){return this===other;}});
+const context={request:{app:'TeleAgent'},Date,string:(raw,key)=>key==='AXRole'?raw.role:key==='AXValue'?raw.value:key==='AXSubrole'?raw.subrole||'':'',array:(raw,key)=>key==='AXWindows'?raw.windows||[]:raw.children||[],fail(message){throw Error(message);}};
+vm.createContext(context);vm.runInContext(source.slice(source.indexOf('function snapshot('),source.indexOf('function title(')),context);
+const root=window=>({windows:[window]});
+let deep=node('AXStaticText',[],'current answer');for(let i=0;i<140;i++)deep=node('AXGroup',[deep]);
+let window=node('AXWindow',[node('AXWebArea',[deep])]);let result=context.snapshot(root(window));assert.equal(result.length,143);assert.equal(result.at(-1).value,'current answer');assert.equal(result.at(-1).parent.children[0],result.at(-1));
+const preview=node('AXWebArea',Array.from({length:25000},()=>node('AXStaticText',[],'foreign preview text')));
+const own=node('AXStaticText',[],'current question');window=node('AXWindow',[node('AXWebArea',[own,preview,node('AXButton')])]);result=context.snapshot(root(window));assert.equal(result.length,5);assert.ok(result.some(n=>n.opaque));assert.ok(!result.some(n=>n.value==='foreign preview text'));assert.ok(result.some(n=>n.value==='current question'));
+const many=Array.from({length:9000},()=>node('AXStaticText',[],'message'));window=node('AXWindow',[node('AXWebArea',many)]);assert.equal(context.snapshot(root(window)).length,9002,'large legitimate conversation above former 8000 limit is read fully');
+const cycle=node('AXGroup');cycle.children=[cycle,node('AXStaticText',[],'after cycle')];result=context.snapshot(root(node('AXWindow',[cycle])));assert.equal(result.length,3);assert.equal(result.at(-1).value,'after cycle');
+window=node('AXWindow',Array.from({length:20000},()=>node('AXButton')));assert.throws(()=>context.snapshot(root(window)),/20000/,'oversized scan must reject instead of exposing partial controls');
+context.request.app='WorkBuddy';window=node('AXWindow',Array.from({length:8000},()=>node('AXButton')));assert.throws(()=>context.snapshot(root(window)),/8000/);
+window=node('AXWindow',[node('AXWebArea',[preview])]);assert.throws(()=>context.snapshot(root(window)),/8000/,'other clients keep full traversal semantics');
+assert.throws(()=>context.snapshot({windows:[]}),/无法唯一识别/);
+console.log('PASS AX snapshot: deep hierarchy, 9000-node complete scan, 25000-node embedded preview excluded, cycle protection, complete parent links, bounded rejection and client isolation.');

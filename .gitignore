@@ -1,0 +1,29 @@
+# Local toolchains, dependencies and generated artifacts
+.toolchain/
+**/node_modules/
+**/build/
+**/libs/
+**/test-output/
+dist/
+output/
+outputs/
+**/__pycache__/
+*.pyc
+*.log
+.DS_Store
+StartupProfileData-*
+*.apk
+*.idsig
+*.class
+*.jar
+# Signing material, credentials and local configuration
+**/.signing/
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.pem
+*.key

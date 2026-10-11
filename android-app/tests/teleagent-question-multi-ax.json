@@ -1,0 +1,434 @@
+[
+  {
+    "role": "AXButton",
+    "name": "已完成本轮思考与执行 16:34 完成 耗时 26.1 秒",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "已完成本轮思考与执行",
+    "description": "",
+    "parent": 0,
+    "enabled": "true",
+    "checked": "已完成本轮思考与执行"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "16:34 完成 耗时 26.1 秒",
+    "description": "",
+    "parent": 0,
+    "enabled": "true",
+    "checked": "16:34 完成 耗时 26.1 秒"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 3,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "好的，我先向您确认一次图片需求，之后就直接生成，不再追问。",
+    "description": "",
+    "parent": 4,
+    "enabled": "true",
+    "checked": "好的，我先向您确认一次图片需求，之后就直接生成，不再追问。"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 3,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "",
+    "value": "",
+    "description": "仅复制文本",
+    "parent": 6,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "",
+    "value": "",
+    "description": "带格式复制",
+    "parent": 6,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "",
+    "value": "",
+    "description": "收起详情",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "交互式问答 · 需要确认2个问题",
+    "description": "",
+    "parent": 10,
+    "enabled": "true",
+    "checked": "交互式问答 · 需要确认2个问题"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "16:34",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": "16:34"
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "等待中",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": "等待中"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "跳过问答",
+    "value": "",
+    "description": "",
+    "parent": 14,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "图片内容",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "画面风格",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "这张图片想画什么内容？",
+    "description": "",
+    "parent": 18,
+    "enabled": "true",
+    "checked": "这张图片想画什么内容？"
+  },
+  {
+    "role": "AXRadioGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "城市夜景插画 现代都市夜景、霓虹灯光效果",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 21,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "城市夜景插画",
+    "description": "",
+    "parent": 22,
+    "enabled": "true",
+    "checked": "城市夜景插画"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 21,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "现代都市夜景、霓虹灯光效果",
+    "description": "",
+    "parent": 24,
+    "enabled": "true",
+    "checked": "现代都市夜景、霓虹灯光效果"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "自然风光 山川湖海、日出日落等治愈场景",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 26,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "自然风光",
+    "description": "",
+    "parent": 27,
+    "enabled": "true",
+    "checked": "自然风光"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 26,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "山川湖海、日出日落等治愈场景",
+    "description": "",
+    "parent": 29,
+    "enabled": "true",
+    "checked": "山川湖海、日出日落等治愈场景"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "科技感海报 深色背景、数据流、未来感构图",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 31,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "科技感海报",
+    "description": "",
+    "parent": 32,
+    "enabled": "true",
+    "checked": "科技感海报"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 31,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "深色背景、数据流、未来感构图",
+    "description": "",
+    "parent": 34,
+    "enabled": "true",
+    "checked": "深色背景、数据流、未来感构图"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "萌宠插画 可爱动物、温暖治愈系画面",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 36,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "萌宠插画",
+    "description": "",
+    "parent": 37,
+    "enabled": "true",
+    "checked": "萌宠插画"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 36,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "可爱动物、温暖治愈系画面",
+    "description": "",
+    "parent": 39,
+    "enabled": "true",
+    "checked": "可爱动物、温暖治愈系画面"
+  },
+  {
+    "role": "AXRadioButton",
+    "name": "其他（自定义输入） 以上选项均不符，自行填写",
+    "value": "",
+    "description": "",
+    "parent": 20,
+    "enabled": "true",
+    "checked": "0"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 41,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "其他（自定义输入）",
+    "description": "",
+    "parent": 42,
+    "enabled": "true",
+    "checked": "其他（自定义输入）"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": 41,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXStaticText",
+    "name": "",
+    "value": "以上选项均不符，自行填写",
+    "description": "",
+    "parent": 44,
+    "enabled": "true",
+    "checked": "以上选项均不符，自行填写"
+  },
+  {
+    "role": "AXGroup",
+    "name": "",
+    "value": "",
+    "description": "",
+    "parent": -1,
+    "enabled": "true",
+    "checked": ""
+  },
+  {
+    "role": "AXButton",
+    "name": "暂不回答，下一题（0/2 已回答）",
+    "value": "",
+    "description": "",
+    "parent": 46,
+    "enabled": "true",
+    "checked": ""
+  }
+]

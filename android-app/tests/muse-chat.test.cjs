@@ -1,0 +1,39 @@
+const assert=require('node:assert/strict');const path=require('node:path');const fs=require('node:fs');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+ try{
+ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:2});const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.addInitScript(()=>{window.calls=[];window.Pocket=new Proxy({}, {get:(_,name)=>(...args)=>window.calls.push([name,...args.map(a=>{try{return JSON.parse(a);}catch{return a;}})])});});
+ const output=path.resolve('test-output/muse-050');fs.mkdirSync(output,{recursive:true});
+ await page.goto('file://'+path.resolve('app/src/main/assets/index.html'));await page.screenshot({path:path.join(output,'welcome-light.png')});
+ await page.evaluate(()=>{receive('connected',{profile:{host:'test-host',port:22,user:'test-user',directory:'/tmp/project',taskService:true},agents:[{id:'codex',name:'Codex',kind:'codex'}]});receive('serviceSnapshot',{tasks:[]});});
+ await page.locator('#input').fill('准备时保留草稿');await page.locator('#send').click();assert.equal((await page.evaluate(()=>calls.filter(c=>c[0]==='send'))).length,0,'preparation snapshot cannot authorize send');assert.equal(await page.locator('#input').inputValue(),'准备时保留草稿');await page.evaluate(()=>receive('serviceReady',{value:true}));
+ await page.locator('#input').fill('第一条任务');await page.locator('#send').click();let sent=await page.evaluate(()=>calls.filter(c=>c[0]==='send'));assert.equal(sent.length,1);
+ await page.locator('.user-copy-button').click();assert.ok(await page.evaluate(()=>calls.some(c=>c[0]==='copyText'&&c[1]==='第一条任务')));assert.equal(await page.locator('#toast').textContent(),'已复制指令');
+ await page.evaluate(()=>receive('serviceSnapshot',{tasks:[]}));assert.equal(await page.locator('#send').getAttribute('aria-label'),'停止任务','stale snapshot cannot finish pending submission');
+ const id=sent[0][1].messageId,conversationId=sent[0][1].conversationId;
+ const task={id,status:'running',createdAt:Date.now(),request:{messageId:id,conversationId,agent:'codex',prompt:'第一条任务'},events:[{seq:1,type:'run',data:{id:'run-1',agent:'Codex',label:'回复'}}]};
+ await page.evaluate(task=>receive('serviceSnapshot',{tasks:[task]}),task);
+ assert.equal(await page.locator('#send').getAttribute('aria-label'),'停止任务');
+ await page.locator('#input').fill('接着解释实现');await page.locator('#send').click();assert.equal(await page.locator('#queuePanel').isVisible(),true);assert.equal((await page.evaluate(()=>calls.filter(c=>c[0]==='send'))).length,1);
+ task.status='succeeded';task.events.push({seq:2,type:'update',data:{id:'run-1',status:'已完成',text:'# 已完成\n\n这是 **Markdown** 回复。\n\n```js\nconsole.log("safe");\n```\n\n<svg onload="window.injected=true">\n\n[危险链接](javascript:alert(1))'}});
+ await page.evaluate(task=>receive('serviceSnapshot',{tasks:[task]}),task);await page.waitForTimeout(100);
+ sent=await page.evaluate(()=>calls.filter(c=>c[0]==='send'));assert.equal(sent.length,2,'queued follow-up dispatches once after success');assert.equal(sent[1][1].prompt,'接着解释实现');assert.equal(sent[1][1].conversationId,conversationId);
+ assert.equal(await page.locator('.markdown h1').textContent(),'已完成');assert.equal(await page.locator('.markdown pre code').textContent(),'console.log("safe");\n');assert.equal(await page.locator('.markdown svg').count(),0);assert.equal(await page.evaluate(()=>window.injected),undefined);
+ assert.equal(await page.locator('.code-copy').count(),1);await page.locator('.code-copy').click();assert.ok(await page.evaluate(()=>calls.some(c=>c[0]==='copyText'&&c[1].includes('console.log'))));
+ const second={...task,id:sent[1][1].messageId,status:'waiting_approval',request:sent[1][1],events:[{seq:1,type:'run',data:{id:'run-2',agent:'Codex',label:'回复'}},{seq:2,type:'interaction',data:{id:'run-2',token:'permission-token',kind:'approval',title:'需要确认',detail:'运行测试命令',expiresAt:Date.now()+180000,state:'pending',options:[{id:'accept',label:'仅允许这次'},{id:'decline',label:'拒绝'}]}}]};
+ await page.evaluate(tasks=>receive('serviceSnapshot',{tasks}),[task,second]);await page.locator('#input').fill('停止也保留这份草稿');await page.locator('#stop').click();assert.equal(await page.locator('#input').inputValue(),'停止也保留这份草稿');assert.ok(await page.evaluate(()=>calls.some(c=>c[0]==='taskRequest'&&c[1].action==='cancel')));
+ await page.screenshot({path:path.join(output,'chat-light.png')});
+ await page.locator('#historyButton').click();await page.locator('#tasksTab').click();assert.equal(await page.locator('.task-card').count(),2);assert.ok((await page.locator('#taskList').textContent()).includes('等待确认'));await page.screenshot({path:path.join(output,'tasks-light.png')});await page.locator('[data-close="taskSheet"]').click();
+ second.status='unverifiable';second.error='服务重启，状态待确认';second.events[1].data.state='closed';
+ await page.evaluate(tasks=>receive('serviceSnapshot',{tasks}),[task,second]);assert.equal(await page.locator('.interaction button:not(:disabled)').count(),0,'live reconnect invalidates same-sequence approvals');await page.waitForTimeout(400);const saved=await page.evaluate(()=>calls.filter(c=>c[0]==='save').at(-1)[1]);assert.equal(saved.draft,'停止也保留这份草稿');
+ await page.reload();await page.evaluate(saved=>receive('restore',saved),saved);assert.equal(await page.locator('#input').inputValue(),'停止也保留这份草稿');assert.equal((await page.evaluate(()=>calls.filter(c=>c[0]==='send'))).length,0,'reload cannot send queued/history work');
+ await page.evaluate(tasks=>receive('serviceSnapshot',{tasks}),[task,second]);assert.equal(await page.locator('.interaction button:not(:disabled)').count(),0,'restart snapshot cannot reactivate an old approval');
+ await page.evaluate(()=>setTheme(true));await page.setViewportSize({width:320,height:540});await page.screenshot({path:path.join(output,'chat-dark-narrow.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ const original='多行指令\n  保留空格 <原文> & 符号';await page.evaluate(text=>{const node=renderMessage({id:'copy-original',role:'user',text});$('messages').append(node);},original);await page.locator('[data-id=copy-original] .user-copy-button').click();assert.equal(await page.evaluate(()=>calls.filter(c=>c[0]==='copyText').at(-1)[1]),original);
+ assert.ok(await page.locator('.message.user').evaluateAll(nodes=>nodes.every(node=>{const b=node.querySelector('.user-copy-button').getBoundingClientRect(),bubble=node.getBoundingClientRect();return b.left>=0&&b.right<=bubble.left&&b.width>=44&&b.height>=44;})),'copy targets stay left of bubbles without leaving narrow viewport');
+ assert.ok(await page.locator('#send').evaluate(node=>node.getBoundingClientRect().bottom<=innerHeight));assert.deepEqual(errors,[]);
+ console.log('PASS OpenMuse chat port: send/stop, draft persistence, follow-up queue, Markdown/code copy, XSS rejection, tasks, reconnect/restart approval invalidation, narrow dark layout.');
+ }finally{await browser.close();}
+})().catch(error=>{console.error(error);process.exit(1);});
