@@ -35,12 +35,14 @@ final class LocalTransport extends SshTransport {
         Thread drain=new Thread(()->{try(InputStream in=child.getErrorStream()){byte[] b=new byte[4096];int n;while((n=in.read(b))!=-1){synchronized(errors){if(errors.size()<16384)errors.write(b,0,Math.min(n,16384-errors.size()));}}}catch(IOException ignored){}},"agent-stderr");drain.setDaemon(true);drain.start();
         ScheduledFuture<?> deadline=deadlines.schedule(()->{expired.set(true);terminate(child);},timeout,TimeUnit.MILLISECONDS);
         ScheduledFuture<?> stop=deadlines.scheduleWithFixedDelay(()->{if(cancelled.get())terminate(child);},100,100,TimeUnit.MILLISECONDS);
+        SshTransport.DuplexInput queued=null;
         try{
-            if(duplex!=null)duplex.start(child.getOutputStream());
+            if(duplex!=null){queued=new SshTransport.DuplexInput(child.getOutputStream(),()->terminate(child));duplex.start(queued);}
             else{child.getOutputStream().write(stdin.getBytes(StandardCharsets.UTF_8));child.getOutputStream().close();}
             try(Reader in=new InputStreamReader(child.getInputStream(),StandardCharsets.UTF_8)){
                 StringBuilder line=new StringBuilder();int ch,total=0;
                 while((ch=in.read())!=-1){
+                    if(queued!=null)queued.checkError();
                     if(cancelled.get())throw new CancellationException();
                     if(++total>16000000||line.length()>8000000)throw new IOException("Agent 输出超过大小限制");
                     if(ch=='\n'){
@@ -52,15 +54,17 @@ final class LocalTransport extends SshTransport {
             }
             if(expired.get())throw new IOException("等待超时，执行状态未知，请在电脑确认");
             if(cancelled.get())throw new CancellationException();
+            if(queued!=null)queued.checkError();
             int exit=child.waitFor();drain.join(1000);
             if(exit!=0)throw new IOException("远端退出码 "+exit+"："+errors.toString("UTF-8"));
             if(duplex!=null)throw new IOException("交互通道结束，执行状态未知；不会重发任务");
         }finally{
-            deadline.cancel(false);stop.cancel(false);terminate(child);
+            deadline.cancel(false);stop.cancel(false);if(queued!=null)queued.close();terminate(child);
             List<ProcessHandle> descendants=terminating.getOrDefault(child,List.of());long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(3);
             while((child.isAlive()||descendants.stream().anyMatch(ProcessHandle::isAlive))&&System.nanoTime()<until)Thread.sleep(50);
             if(child.isAlive()||descendants.stream().anyMatch(ProcessHandle::isAlive))throw new IOException("电脑任务进程尚未退出，不能确认会话已结束");
             children.remove(child);terminating.remove(child);
+            if(queued!=null)queued.awaitStopped();
         }
     }
     @Override public int run(String command,String stdin,Line line,AtomicBoolean cancelled,long timeout)throws Exception{execute(command,stdin,line,null,cancelled,timeout);return 0;}

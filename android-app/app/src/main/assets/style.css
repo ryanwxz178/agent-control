@@ -141,4 +141,10 @@ h2{font-size:19px;letter-spacing:-.4px}.sheet-subtitle{font-size:12px;margin-top
 .input-file span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.input-file small{font-size:10px;color:var(--secondary);white-space:nowrap}
 .input-file button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;padding:12px;background:transparent;border:0;border-radius:10px}.input-file .icon{width:16px;height:16px}
 #inputFileStatus{margin:0 0 6px;font-size:12px;line-height:1.5;color:var(--secondary);overflow-wrap:anywhere}
+.file-upload-dialog{width:calc(100% - 40px);max-width:328px;max-height:calc(100dvh - 40px);margin:auto;padding:24px 20px;border:1px solid var(--line);border-radius:18px;text-align:center;overflow:auto;box-shadow:var(--shadow)}
+.file-upload-dialog[open]{display:block}
+.file-upload-dialog:focus{outline:none}
+.file-upload-dialog::backdrop{background:#12202066}.file-upload-dialog h2{font-size:17px;line-height:1.5;margin:14px 0 8px}.file-upload-dialog p{margin:0 0 10px;font-size:13px;line-height:1.6;overflow-wrap:anywhere;color:var(--ink)}.file-upload-dialog small{display:block;font-size:11px;line-height:1.6;color:var(--secondary)}
+.file-upload-spinner{display:inline-block;width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:file-upload-spin .8s linear infinite}@keyframes file-upload-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.file-upload-spinner{animation:none;border-top-color:var(--accent);border-right-color:var(--accent)}}
 .sent-files{display:flex;flex-direction:column;gap:4px;align-items:flex-end;max-width:100%;margin-top:6px}.sent-files span{max-width:100%;font-size:11px;line-height:1.5;padding:6px 10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}

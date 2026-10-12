@@ -17,8 +17,13 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
     private SecureStore store;
     private final InputFiles inputFiles=new InputFiles();
     private volatile boolean selectingFiles;
+    private volatile String pickerOperation="";
+    private final java.util.List<android.net.Uri> pendingInputUris=new java.util.ArrayList<>();
     private String pickerComputer="";
     private int pickerLimit=4;
+    private String pendingInputComputer="";
+    private int pendingInputLimit=4;
+    private boolean taskKeepScreenOn,fileKeepScreenOn;
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private byte[] privateKey;
     private volatile JSONObject pendingConnection;
@@ -151,11 +156,52 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
             }
         }
 
-        runOnUiThread(()->{if(type.equals("busy")){
-            if(data.optBoolean("value"))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        runOnUiThread(()->{
+            if(type.equals("busy"))taskKeepScreenOn=data.optBoolean("value");
+            if((type.equals("inputFilesBusy")||type.equals("inputFilesFailed"))&&data.optString("operationId").equals(pickerOperation))fileKeepScreenOn=type.equals("inputFilesBusy")&&data.optBoolean("value");
+            if(taskKeepScreenOn||fileKeepScreenOn)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        }if(!isDestroyed())web.evaluateJavascript("window.receive("+JSONObject.quote(type)+","+data.toString()+")",null);});
+            if(!isDestroyed())web.evaluateJavascript("window.receive("+JSONObject.quote(type)+","+data.toString()+")",null);
+        });
     }
+    private void inputBusy(String operation,boolean value,String message,boolean complete){
+        try{event("inputFilesBusy",new JSONObject().put("operationId",operation).put("value",value).put("message",message).put("complete",complete));}catch(Exception ignored){}
+    }
+    private static String inputFailure(Exception failure){
+        for(Throwable cause=failure;cause!=null;cause=cause.getCause()){
+            String message=String.valueOf(cause.getMessage()).toLowerCase(java.util.Locale.ROOT);
+            if(cause instanceof java.net.SocketTimeoutException||message.contains("上传超时")||message.contains("upload timed out"))return "文件上传超时，文件尚未发送。连接恢复后可重试上传。";
+            if(cause instanceof java.net.SocketException||cause instanceof EOFException||message.contains("broken pipe")||message.contains("connection reset")||message.contains("connection lost")||message.contains("socket is closed")||message.contains("not connected")||message.contains("连接已断开")||message.contains("连接未建立"))return "文件上传时连接中断，文件尚未发送。连接恢复后可重试上传。";
+        }
+        String message=failure.getMessage();return "上传文件失败："+(message==null||message.trim().isEmpty()?"请重新选择文件后重试":message);
+    }
+    private void uploadSelectedFiles(){
+        final String operation=pickerOperation,computer=pendingInputComputer;
+        final int limit=pendingInputLimit;
+        io.execute(()->{
+            boolean complete=false;JSONObject failed=null;
+            try{
+                if(pendingInputUris.size()>limit)throw new IOException("本次最多选择 "+limit+" 个文件");
+                while(!pendingInputUris.isEmpty()){
+                    if(!computer.equals(engine.computerKey()))throw new IOException("电脑连接已改变，请重新选择文件");
+                    android.net.Uri uri=pendingInputUris.get(0);String name="文件";long declared=-1;
+                    try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME,android.provider.OpenableColumns.SIZE},null,null,null)){
+                        if(cursor!=null&&cursor.moveToFirst()){int n=cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME),s=cursor.getColumnIndex(android.provider.OpenableColumns.SIZE);if(n>=0&&!cursor.isNull(n))name=cursor.getString(n);if(s>=0&&!cursor.isNull(s))declared=cursor.getLong(s);}
+                    }
+                    if(declared>InputFiles.LIMIT)throw new IOException(name+" 超过 20MB");
+                    inputBusy(operation,true,"正在上传："+name,false);
+                    byte[] bytes;try(InputStream input=getContentResolver().openInputStream(uri)){bytes=InputFiles.read(input);}
+                    String mime=getContentResolver().getType(uri);JSONObject uploaded=engine.uploadInput(name,mime==null?"application/octet-stream":mime,bytes);
+                    JSONObject file=inputFiles.add(uploaded);store.put("input-files",inputFiles.save());pendingInputUris.remove(0);
+                    event("inputFileReady",new JSONObject(file.toString()).put("operationId",operation));
+                }
+                complete=true;
+            }catch(Exception failure){
+                try{failed=new JSONObject().put("operationId",operation).put("message",inputFailure(failure)).put("retryable",!pendingInputUris.isEmpty()&&pendingInputUris.size()<=limit&&computer.equals(engine.computerKey()));}catch(Exception ignored){}
+            }finally{selectingFiles=false;if(failed!=null)event("inputFilesFailed",failed);inputBusy(operation,false,"",complete);}
+        });
+    }
+    private boolean blockFileInterruption(){if(!selectingFiles)return false;error("正在上传文件，请等待上传完成");return true;}
     void error(String text){try{event("error",new JSONObject().put("message",text));}catch(Exception ignored){}}
     public boolean trust(String host,String fingerprint)throws Exception{
         String key="host:"+host.toLowerCase(java.util.Locale.ROOT),known=store.get(key);
@@ -183,16 +229,26 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
         @JavascriptInterface public void connect(String raw){if(selectingFiles){error("请等待文件上传完成再切换电脑");return;}io.execute(()->{try{JSONObject p=new JSONObject(raw);String saved=store.get("auto-connect");if(p.optBoolean("autoConnect")&&p.optString("password").isEmpty()&&!saved.isEmpty()){JSONObject previous=new JSONObject(saved);if(p.optString("host").trim().equals(previous.optString("host").trim())&&p.optString("user").trim().equals(previous.optString("user").trim())&&p.optInt("port",22)==previous.optInt("port",22))p.put("password",previous.optString("password"));}pendingConnection=p;if(!p.optBoolean("autoConnect"))store.put("auto-connect","");engine.connect(p,privateKey);}catch(Exception e){error(e.getMessage());}});}
         @JavascriptInterface public void send(String raw){
             JSONObject request;try{request=new JSONObject(raw);}catch(Exception e){error("消息格式无效");return;}
+            if(blockFileInterruption()){try{event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("displayPrompt",request.optString("prompt"))).put("uploads",request.optJSONArray("uploads")));event("busy",new JSONObject().put("value",false));}catch(Exception ignored){}return;}
             io.execute(()->{try{inputFiles.attach(request,engine.computerKey());engine.send(request);}catch(Exception e){try{event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("displayPrompt",request.optString("prompt"))).put("uploads",request.optJSONArray("uploads")));event("busy",new JSONObject().put("value",false));}catch(Exception ignored){}error(e.getMessage());}});
         }
         @JavascriptInterface public void pickFiles(int available){
             runOnUiThread(()->{if(selectingFiles)return;if(!engine.ssh.connected()){error("请先连接电脑再上传文件");return;}if(available<1||available>4){error("每条消息最多上传 4 个文件");return;}
-                selectingFiles=true;pickerComputer=engine.computerKey();pickerLimit=available;
+                selectingFiles=true;pickerOperation=java.util.UUID.randomUUID().toString();pickerComputer=engine.computerKey();pickerLimit=available;
                 Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.setType("*/*");intent.addCategory(Intent.CATEGORY_OPENABLE);intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
-                try{event("inputFilesBusy",new JSONObject().put("value",true).put("message","正在选择文件…"));startActivityForResult(intent,30);}catch(Exception e){selectingFiles=false;error("无法打开文件选择器");try{event("inputFilesBusy",new JSONObject().put("value",false));}catch(Exception ignored){}}
+                try{inputBusy(pickerOperation,true,"正在选择文件…",false);startActivityForResult(intent,30);}catch(Exception e){selectingFiles=false;inputBusy(pickerOperation,false,"",false);error("无法打开文件选择器");}
             });
         }
-        @JavascriptInterface public void removeInputFile(String id){io.execute(()->{try{inputFiles.remove(id);store.put("input-files",inputFiles.save());}catch(Exception e){error("移除附件失败");}});}
+        @JavascriptInterface public void retryInputFiles(){
+            runOnUiThread(()->{
+                if(selectingFiles)return;
+                if(!engine.ssh.connected()){error("请先连接电脑，再重试上传文件");return;}
+                if(pendingInputUris.isEmpty()||!pendingInputComputer.equals(engine.computerKey())){error("所选文件已失效或电脑已改变，请重新选择文件");return;}
+                selectingFiles=true;pickerOperation=java.util.UUID.randomUUID().toString();inputBusy(pickerOperation,true,"正在重试上传文件…",false);uploadSelectedFiles();
+            });
+        }
+        @JavascriptInterface public void discardInputRetry(){runOnUiThread(()->{if(!selectingFiles)pendingInputUris.clear();});}
+        @JavascriptInterface public void removeInputFile(String id){if(blockFileInterruption())return;io.execute(()->{try{inputFiles.remove(id);store.put("input-files",inputFiles.save());}catch(Exception e){error("移除附件失败");}});}
         @JavascriptInterface public void copyText(String text){
             if(text==null||text.length()>150000)return;
             runOnUiThread(()->((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Agent 回复",text)));
@@ -212,39 +268,26 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
             runOnUiThread(()->new AlertDialog.Builder(MainActivity.this).setTitle("读取这个附件？").setMessage(file.name+"\n\n"+(RemoteImages.allowed(file.path)?"从豆包图片服务读取":file.inline==null?"从已连接的电脑读取：\n"+file.path:"预览 Agent 返回的图片")+"\n\n最大 20MB，保存位置由你选择。").setNegativeButton("取消",(d,w)->{try{event("attachmentError",new JSONObject().put("attachmentId",id).put("message","已取消读取"));}catch(Exception ignored){}}).setPositiveButton("读取附件",(d,w)->engine.download(id)).setOnCancelListener(d->{try{event("attachmentError",new JSONObject().put("attachmentId",id).put("message","已取消读取"));}catch(Exception ignored){}}).show());
         }
         @JavascriptInterface public void exportAttachment(String id){runOnUiThread(()->export(id));}
-        @JavascriptInterface public void cancel(){engine.cancel();}
+        @JavascriptInterface public void cancel(){if(!blockFileInterruption())engine.cancel();}
         @JavascriptInterface public void save(String raw){
             if(raw.length()>300000)return;
             io.execute(()->{try{JSONObject j=new JSONObject(raw);if(j.has("profile"))j.getJSONObject("profile").remove("password");store.put("state",j.toString());}catch(Exception e){error("保存失败："+e.getMessage());}});
         }
-        @JavascriptInterface public void importKey(){runOnUiThread(()->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,10);});}
-        @JavascriptInterface public void removeKey(){privateKey=null;io.execute(()->{try{store.put("private-key","");event("key",new JSONObject().put("loaded",false));}catch(Exception e){error(e.getMessage());}});}
+        @JavascriptInterface public void importKey(){if(blockFileInterruption())return;runOnUiThread(()->{if(blockFileInterruption())return;Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,10);});}
+        @JavascriptInterface public void removeKey(){if(blockFileInterruption())return;privateKey=null;io.execute(()->{try{store.put("private-key","");event("key",new JSONObject().put("loaded",false));}catch(Exception e){error(e.getMessage());}});}
         @JavascriptInterface public void resetTrust(String host){
+            if(blockFileInterruption())return;
             if(engine.busy.get()){error("任务执行中不能重置配对");return;}
-            runOnUiThread(()->new AlertDialog.Builder(MainActivity.this).setTitle("重置电脑配对？").setMessage("仅清除本机记录的主机指纹。下次连接必须重新核验电脑指纹。").setNegativeButton("取消",null).setPositiveButton("重置",(d,w)->io.execute(()->{try{store.put("host:"+host.toLowerCase(java.util.Locale.ROOT),"");engine.disconnect();event("connection",new JSONObject().put("status","未连接"));}catch(Exception e){error(e.getMessage());}})).show());
+            runOnUiThread(()->{if(blockFileInterruption())return;new AlertDialog.Builder(MainActivity.this).setTitle("重置电脑配对？").setMessage("仅清除本机记录的主机指纹。下次连接必须重新核验电脑指纹。").setNegativeButton("取消",null).setPositiveButton("重置",(d,w)->{if(blockFileInterruption())return;io.execute(()->{try{store.put("host:"+host.toLowerCase(java.util.Locale.ROOT),"");engine.disconnect();event("connection",new JSONObject().put("status","未连接"));}catch(Exception e){error(e.getMessage());}});}).show();});
         }
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
         if(request==30){
-            if(result!=RESULT_OK||data==null){selectingFiles=false;try{event("inputFilesBusy",new JSONObject().put("value",false));}catch(Exception ignored){}return;}
+            if(result!=RESULT_OK||data==null){selectingFiles=false;inputBusy(pickerOperation,false,"",false);return;}
             java.util.List<android.net.Uri> selected=new java.util.ArrayList<>();
             if(data.getClipData()!=null)for(int i=0;i<data.getClipData().getItemCount();i++)selected.add(data.getClipData().getItemAt(i).getUri());else if(data.getData()!=null)selected.add(data.getData());
-            io.execute(()->{try{
-                if(selected.size()>pickerLimit)throw new IOException("本次最多选择 "+pickerLimit+" 个文件");
-                for(android.net.Uri uri:selected){
-                    if(!pickerComputer.equals(engine.computerKey()))throw new IOException("电脑连接已改变，请重新选择文件");
-                    String name="文件";long declared=-1;
-                    try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME,android.provider.OpenableColumns.SIZE},null,null,null)){
-                        if(cursor!=null&&cursor.moveToFirst()){int n=cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME),s=cursor.getColumnIndex(android.provider.OpenableColumns.SIZE);if(n>=0&&!cursor.isNull(n))name=cursor.getString(n);if(s>=0&&!cursor.isNull(s))declared=cursor.getLong(s);}
-                    }
-                    if(declared>InputFiles.LIMIT)throw new IOException(name+" 超过 20MB");
-                    event("inputFilesBusy",new JSONObject().put("value",true).put("message","正在上传："+name));
-                    byte[] bytes;try(InputStream input=getContentResolver().openInputStream(uri)){bytes=InputFiles.read(input);}
-                    String mime=getContentResolver().getType(uri);JSONObject uploaded=engine.uploadInput(name,mime==null?"application/octet-stream":mime,bytes);
-                    JSONObject file=inputFiles.add(uploaded);store.put("input-files",inputFiles.save());event("inputFileReady",file);
-                }
-            }catch(Exception e){error("上传文件失败："+e.getMessage());}finally{selectingFiles=false;try{event("inputFilesBusy",new JSONObject().put("value",false));}catch(Exception ignored){}}});return;
+            pendingInputUris.clear();pendingInputUris.addAll(selected);pendingInputComputer=pickerComputer;pendingInputLimit=pickerLimit;uploadSelectedFiles();return;
         }
         if(request==20){
             byte[] bytes=exportBytes;String name=exportName;exportBytes=null;exportName=null;exporting=false;

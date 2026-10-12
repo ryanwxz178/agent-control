@@ -2,7 +2,7 @@
 
 Android 聊天客户端，通过 SSH 连接电脑上的 AI Agent，支持确认交互、附件、桌面会话连续性及可选电脑持久任务服务。
 
-当前源码版本：**0.5.26**（Android versionCode 52）。最低 Android 8.0 / API 26，目标 API 35。
+当前源码版本：**0.5.27**（Android versionCode 53）。最低 Android 8.0 / API 26，目标 API 35。
 
 ## 项目结构
 
@@ -23,7 +23,7 @@ bash android-app/fetch-dependencies.sh
 bash android-app/build.sh
 ```
 
-产物：`dist/Agent-Control-0.5.26.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
+产物：`dist/Agent-Control-0.5.27.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
 
 Windows 本机构建（PowerShell 7）：
 
@@ -63,6 +63,10 @@ Windows 目前依据 WorkBuddy 5.7.7 的附件菜单和文件标签实现适配�
 UI 上传测试需在 `android-app` 目录运行 `node tests/input-files.test.cjs`，并配置 Playwright 和 Chrome。原生文件限制、跨电脑校验、Windows/macOS 桌面转发及后续对话测试纳入 `windows/Build-Android.ps1 -Test` 与 `android-app/tests/run.sh`。桌面附件模拟测试分别为 `node tests/desktop-files-mac.test.cjs` 和 `powershell.exe -NoProfile -File android-app/tests/windows/Test-Logic.ps1`（后者在仓库根目录运行）；不等同于真实 APP 文件收发验收。可选的 Windows 原生文件选择框夹具测试为 `powershell.exe -NoProfile -STA -File android-app/tests/windows/Test-FilePicker.ps1`，会短暂打开自己的测试窗口，不操作已安装的聊天 APP。
 
 0.5.26 修复历史阅读时强制滚到底部，并将 WorkBuddy CLI 图片作为 ACP 图片内容发送。受该应用本地桥接传输限制，大图使用 JPEG 预览（同条请求图片合计 256KiB），电脑上的原图保留；内嵌 UTF-8 文档超出 512KiB 内容预算时明确拒绝，不截断。`refusal` 会显示上游提供的具体原因，未分类拒绝不会自动重发到桌面。`WorkBuddyFilesTest` 与 `ImagePreviewTest` 纳入 Windows 构建检查；`tests/chat-scroll.test.cjs` 验证滚动行为。`WorkBuddyImageLiveTest` 是需用户授权的真实模型测试，默认不自动运行。
+
+0.5.27 修复上传期间连接检查关闭 SSH 会话的竞态：文件传输期间暂停心跳和连接切换，已开始的连接检查完成后再上传。SFTP 以连续 60 秒无进展或总计 5 分钟为超时条件，完整长度校验后原子发布。上传显示 loading 并锁定会中断传输的应用操作。失败会释放上传状态，保留文字草稿和已成功附件；连接恢复后可点击「重试上传」，不会自动重传文件或发送消息。未完成文件的选择仅保留在当前 APP 实例，重启后需重新选择。上传期间保持屏幕唤醒。Windows 任务记录原子替换遇到短暂读锁时有界重试，避免立即退出服务。`UploadConnectionTest`、`SshUploadTest`、`WindowsTaskStoreAtomicTest` 和 `tests/input-upload-recovery.test.cjs` 覆盖对应回归。
+
+同版修复 WorkBuddy CLI 大图片请求与状态通知互相阻塞管道的问题：SSH 和电脑任务服务分别读取回复、按顺序异步写入输入，写入失败明确结束且不重发。`DuplexInputTest` 与原生 Windows `WindowsDuplexBackpressureTest` 验证回压、完整字节、完成事件和退出清理。经用户授权，1,193,880 字节合成图片经生产预览和 WorkBuddy CLI 取得真实颜色、图形回复，无桌面回退；该验证未覆盖实体手机。
 
 Windows 桌面自动化需要同用户已登录、解锁的会话桥接；SSH/CLI 接入不依赖该桥接。见 [Windows 指南](docs/WINDOWS.md)。
 

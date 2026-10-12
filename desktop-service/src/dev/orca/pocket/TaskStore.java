@@ -30,7 +30,21 @@ final class TaskStore {
         try{
             if(Files.getFileStore(temp).supportsFileAttributeView("posix"))Files.setPosixFilePermissions(temp,PosixFilePermissions.fromString("rw-------"));
             try(FileChannel channel=FileChannel.open(temp,StandardOpenOption.WRITE)){ByteBuffer buffer=ByteBuffer.wrap(bytes);while(buffer.hasRemaining())channel.write(buffer);channel.force(true);}
-            Files.move(temp,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+            long deadline=System.nanoTime()+1_000_000_000L;
+            while(true){
+                try{Files.move(temp,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);break;}
+                catch(AccessDeniedException denied){
+                    if(!System.getProperty("os.name").startsWith("Windows"))throw denied;
+                    // Windows readers without FILE_SHARE_DELETE briefly block replacement.
+                    // Retry the same complete temporary file; never remove or partially rewrite the target.
+                    if(System.nanoTime()>=deadline)throw new IOException("Cannot atomically replace "+target+": access remained denied after waiting for Windows readers",denied);
+                    try{Thread.sleep(25);}
+                    catch(InterruptedException interrupted){
+                        Thread.currentThread().interrupt();
+                        InterruptedIOException failure=new InterruptedIOException("Interrupted while waiting to atomically replace "+target);failure.initCause(denied);throw failure;
+                    }
+                }
+            }
             if(!System.getProperty("os.name").startsWith("Windows"))try(FileChannel parent=FileChannel.open(target.getParent(),StandardOpenOption.READ)){parent.force(true);}
         }finally{Files.deleteIfExists(temp);}
     }

@@ -9,7 +9,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   await page.evaluate(()=>{receive('connected',{profile:{host:'test',directory:'D:/project',taskService:false,accessMode:'cli'},agents:[{id:'codex',name:'Codex',kind:'codex'}]});state.selected='codex';render();});
   await page.locator('#attachFile').click();assert.deepEqual(await page.evaluate(()=>calls.at(-1)),['pickFiles',4]);
   await page.evaluate(()=>receive('inputFilesBusy',{value:true,message:'正在上传：报告.pdf'}));assert.equal(await page.locator('#send').isDisabled(),true);
-  const old=await page.evaluate(()=>state.conversationId);await page.locator('#newChat').click();assert.equal(await page.evaluate(()=>state.conversationId),old,'upload stays bound to the conversation');
+  const old=await page.evaluate(()=>state.conversationId);await page.locator('#newChat').click({force:true});assert.equal(await page.evaluate(()=>state.conversationId),old,'upload stays bound to the conversation');
   await page.evaluate(()=>{receive('inputFileReady',{id:'file-1',name:'报告.pdf',size:2048,mime:'application/pdf'});receive('inputFileReady',{id:'file-2',name:'截图.png',size:4096,mime:'image/png'});receive('inputFilesBusy',{value:false});});
   assert.equal(await page.locator('.input-file').count(),2);assert.equal(await page.locator('#send').isDisabled(),false,'files can be sent without text');
   await page.getByRole('button',{name:'移除 截图.png'}).click();assert.deepEqual(await page.evaluate(()=>calls.at(-1)),['removeInputFile','file-2']);

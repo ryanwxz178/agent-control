@@ -9,13 +9,17 @@ import java.util.concurrent.atomic.*;
 public final class WorkBuddyImageLiveTest {
     public static void main(String[] args)throws Exception {
         Path root=Path.of(args[0]).toAbsolutePath(),fixture=Path.of(args[1]).toAbsolutePath();
+        String suffix=args.length>2?args[2]:"";
+        if(!suffix.matches("(?:-[A-Za-z0-9_-]{1,60})?"))throw new IllegalArgumentException("Invalid evidence suffix");
         String prompt="仅说明附件中左右两种图形及其颜色，请简短回答";
         CountDownLatch done=new CountDownLatch(1);
         AtomicReference<String> reply=new AtomicReference<>(""),error=new AtomicReference<>(""),protocol=new AtomicReference<>("");
         AtomicBoolean desktopFallback=new AtomicBoolean();
+        AtomicInteger previewBytes=new AtomicInteger();
         PocketEngine engine=new PocketEngine(new PocketEngine.Host(){
             public String asset(String name)throws Exception{return Files.readString(root.resolve("android-app/app/src/main/assets").resolve(name));}
             public boolean trust(String host,String fingerprint){return false;}
+            public byte[] previewImage(byte[] bytes,int maxBytes)throws Exception{byte[] preview=TaskService.previewImage(bytes,maxBytes);previewBytes.set(preview.length);return preview;}
             public void event(String type,JSONObject data){
                 if(type.equals("agentSession"))protocol.set(data.optString("protocol"));
                 if(type.equals("interaction")){error.set("Unexpected model permission request; test did not approve it");done.countDown();}
@@ -40,8 +44,8 @@ public final class WorkBuddyImageLiveTest {
             while(engine.busy.get()&&System.nanoTime()<deadline)Thread.sleep(50);
             String text=reply.get();
             if(engine.busy.get()||desktopFallback.get()||!protocol.get().equals("acp")||!text.contains("红")||!text.contains("蓝")||!text.contains("圆")||!(text.contains("方")||text.contains("正方形")))throw new AssertionError("Unexpected image reply or transport: "+text);
-            JSONObject evidence=new JSONObject().put("passed",true).put("accessMode","cli").put("transport","Production InputFiles -> PocketEngine -> LocalTransport -> WorkBuddy WBIPC -> ACP native image").put("desktopFallback",false).put("protocol",protocol.get()).put("fixtureBytes",Files.size(fixture)).put("prompt",prompt).put("reply",text);
-            Files.createDirectories(root.resolve("android-app/test-output"));Files.writeString(root.resolve("android-app/test-output/workbuddy-image-cli-live.json"),evidence.toString(2));System.out.println(evidence.toString(2));
+            JSONObject evidence=new JSONObject().put("passed",true).put("accessMode","cli").put("transport","Production InputFiles -> PocketEngine -> LocalTransport -> WorkBuddy WBIPC -> ACP native image").put("desktopFallback",false).put("protocol",protocol.get()).put("fixtureBytes",Files.size(fixture)).put("previewBytes",previewBytes.get()).put("prompt",prompt).put("reply",text);
+            Files.createDirectories(root.resolve("android-app/test-output"));Files.writeString(root.resolve("android-app/test-output/workbuddy-image-cli-live"+suffix+".json"),evidence.toString(2));System.out.println(evidence.toString(2));
         }finally{engine.close();}
     }
 }

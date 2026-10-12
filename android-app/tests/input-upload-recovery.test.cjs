@@ -1,0 +1,96 @@
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+ try{
+  const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(()=>{window.calls=[];window.Pocket=new Proxy({}, {get:(_,name)=>(...args)=>calls.push([name,...args.map(value=>{try{return JSON.parse(value);}catch{return value;}})])});});
+  await page.goto('file://'+path.resolve(process.env.ASSET_PAGE||'app/src/main/assets/index.html'));
+  const connection={profile:{host:'test-host',port:22,user:'test-user',directory:'D:/project',taskService:false,accessMode:'cli'},agents:[{id:'workbuddy',name:'WorkBuddy',kind:'workbuddy'}]};
+  await page.evaluate(data=>{receive('connected',data);state.selected='workbuddy';render();},connection);
+  await page.locator('#input').fill('解读这两张图片，保留我的草稿');
+  await page.evaluate(()=>{
+   receive('inputFilesBusy',{operationId:'upload-one',value:true,message:'正在上传：已完成.png'});
+   receive('inputFileReady',{operationId:'upload-one',id:'ready-one',name:'已完成.png',size:1024,mime:'image/png'});
+   receive('inputFilesBusy',{operationId:'upload-one',value:true,message:'正在上传：IMG_20261009_224750.jpg'});
+  });
+  assert.equal(await page.locator('#inputUploadDialog').isVisible(),true);
+  assert.match(await page.locator('#inputUploadDetail').textContent(),/IMG_20261009_224750\.jpg/);
+  const activeConversation=await page.evaluate(()=>state.conversationId),beforeInterrupt=await page.evaluate(()=>calls.length);
+  for(const width of [320,390]){
+   await page.setViewportSize({width,height:640});
+   assert.ok(await page.locator('#inputUploadDialog').evaluate(dialog=>{const bounds=dialog.getBoundingClientRect();return bounds.left>=20&&bounds.right<=innerWidth-20&&bounds.top>=20&&bounds.bottom<=innerHeight-20&&Math.abs(bounds.top+bounds.height/2-innerHeight/2)<2;}),'loading dialog is compact, centered and fully visible');
+   for(const id of ['settingsButton','connectionButton','agentButton','historyButton','newChat','composerAgent','attachFile','send'])await page.locator('#'+id).click({force:true});
+   await page.locator('#input').click({force:true});await page.keyboard.type('不得写入草稿');await page.keyboard.press('Control+Enter');await page.keyboard.press('Escape');
+  }
+  await page.evaluate(()=>back());
+  await page.evaluate(()=>openSettings());
+  await page.waitForTimeout(20);
+  assert.equal(await page.locator('#inputUploadDialog').isVisible(),true,'Escape and Android back cannot dismiss an active upload');
+  assert.equal(await page.evaluate(()=>state.conversationId),activeConversation);
+  assert.equal(await page.locator('#input').inputValue(),'解读这两张图片，保留我的草稿','modal prevents background input');
+  assert.equal(await page.evaluate(()=>calls.length),beforeInterrupt,'modal blocks header/settings/history/new-chat/Agent/attach/send actions');
+  assert.equal(await page.evaluate(()=>[...document.querySelectorAll('dialog[open]')].map(dialog=>dialog.id).join(',')),'inputUploadDialog');
+  fs.mkdirSync('test-output/input-files',{recursive:true});await page.screenshot({path:'test-output/input-files/upload-loading.png'});
+  await page.evaluate(()=>{receive('connection',{status:'连接已断开，等待重连'});receive('error',{message:'电脑连接已断开，正在尝试恢复连接。'});});
+  assert.equal(await page.evaluate(()=>inputFilesUploading),true,'connection event cannot release an active native transfer');
+  assert.equal(await page.locator('#attachFile').isDisabled(),true);
+  await page.evaluate(()=>receive('inputFilesFailed',{operationId:'upload-one',message:'文件上传时连接中断，文件尚未发送。连接恢复后可重试上传。',retryable:true}));
+  assert.equal(await page.evaluate(()=>inputFilesUploading),false,'native terminal failure releases the composer immediately');
+  assert.equal(await page.locator('#inputUploadDialog').isHidden(),true,'terminal failure dismisses the loading lock');
+  await page.evaluate(()=>receive('inputFilesBusy',{operationId:'upload-one',value:false,complete:false}));
+  assert.equal(await page.locator('#input').inputValue(),'解读这两张图片，保留我的草稿');
+  assert.equal(await page.locator('.input-file').count(),1,'partial success survives a subsequent upload failure');
+  assert.equal(await page.getByRole('button',{name:'重试上传',exact:true}).isDisabled(),true);
+  assert.equal(await page.locator('#send').isDisabled(),true,'an incomplete attachment selection cannot send a text-only message by mistake');
+  await page.locator('#newChat').click();await page.evaluate(()=>startConversation());assert.equal(await page.evaluate(()=>state.conversationId),activeConversation,'failed URI selection remains bound until retry or explicit discard');
+  await page.locator('#input').press('Control+Enter');
+  await page.evaluate(()=>send());assert.equal(await page.evaluate(()=>calls.filter(call=>call[0]==='send').length),0);
+  assert.doesNotMatch(await page.locator('#inputFileStatus').textContent(),/正在上传|java\.net|Broken pipe/);
+  await page.evaluate(data=>receive('connected',{...data,recovered:true}),connection);
+  assert.equal(await page.locator('#attachFile').isDisabled(),false,'connection recovery restores the file picker');
+  assert.equal(await page.getByRole('button',{name:'重试上传',exact:true}).isDisabled(),false);
+  assert.equal(await page.evaluate(()=>calls.filter(call=>call[0]==='retryInputFiles'||call[0]==='send').length),0,'reconnection cannot replay uploads or Agent messages');
+  await page.getByRole('button',{name:'重试上传',exact:true}).click();
+  assert.equal(await page.evaluate(()=>calls.filter(call=>call[0]==='retryInputFiles').length),1);
+  await page.evaluate(()=>{
+   receive('inputFilesBusy',{operationId:'upload-two',value:true,message:'正在重试上传文件…'});
+   receive('inputFilesBusy',{operationId:'upload-one',value:false,complete:true});
+   receive('inputFilesFailed',{operationId:'upload-one',message:'旧任务失败',retryable:true});
+   receive('inputFileReady',{operationId:'upload-one',id:'late-old',name:'过期.png',size:100});
+  });
+  assert.equal(await page.evaluate(()=>inputFilesUploading),true,'old finally/failure events cannot unlock a new upload');
+  assert.equal(await page.locator('#inputFileStatus').textContent(),'正在重试上传文件…');
+  assert.equal(await page.locator('.input-file').count(),1,'late old file metadata cannot enter the new draft');
+  await page.evaluate(()=>{
+   receive('inputFileReady',{operationId:'upload-two',id:'ready-two',name:'IMG_20261009_224750.jpg',size:2048,mime:'image/jpeg'});
+   receive('inputFileReady',{operationId:'upload-two',id:'ready-two',name:'IMG_20261009_224750.jpg',size:2048,mime:'image/jpeg'});
+   receive('inputFilesBusy',{operationId:'upload-two',value:false,complete:true});
+  });
+  assert.equal(await page.locator('.input-file').count(),2,'repeated completion events do not duplicate selected files');
+  assert.equal(await page.locator('#inputFileStatus').isHidden(),true);
+  assert.equal(await page.locator('#send').isDisabled(),false);
+  await page.locator('#send').click();
+  const sent=await page.evaluate(()=>calls.filter(call=>call[0]==='send').at(-1)[1]);
+  assert.deepEqual(sent.uploads,['ready-one','ready-two']);assert.equal(sent.prompt,'解读这两张图片，保留我的草稿');
+  assert.equal(await page.evaluate(()=>calls.filter(call=>call[0]==='send').length),1,'only an explicit send submits the recovered attachments');
+  await page.evaluate(sent=>{receive('rejected',{messageId:sent.messageId,prompt:sent.prompt});receive('busy',{value:false});receive('inputFilesBusy',{operationId:'upload-three',value:true,message:'正在上传：第三张.png'});receive('inputFilesFailed',{operationId:'upload-three',message:'文件上传超时，文件尚未发送。连接恢复后可重试上传。',retryable:true});receive('inputFilesBusy',{operationId:'upload-three',value:false,complete:false});},sent);
+  await page.waitForTimeout(400);const saved=await page.evaluate(()=>calls.filter(call=>call[0]==='save').at(-1)[1]);
+  await page.reload();await page.evaluate(data=>receive('restore',data),saved);
+  assert.equal(await page.locator('#input').inputValue(),sent.prompt);
+  assert.equal(await page.locator('.input-file').count(),2,'completed files and caption survive APP restart');
+  assert.equal(await page.getByRole('button',{name:'重试上传',exact:true}).count(),0,'restart cannot offer a stale native URI retry');
+  assert.match(await page.locator('#inputFileStatus').textContent(),/请重新选择文件/);
+  assert.doesNotMatch(await page.locator('#inputFileStatus').textContent(),/可重试上传/,'restart does not contradict the unavailable URI retry');
+  assert.equal(await page.evaluate(()=>calls.filter(call=>call[0]==='send'||call[0]==='retryInputFiles').length),0);
+  await page.evaluate(data=>receive('connected',{...data,recovered:true}),connection);
+  await page.setViewportSize({width:320,height:640});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  assert.ok(await page.locator('#send').evaluate(button=>button.getBoundingClientRect().bottom<=innerHeight),'recovery controls keep the composer inside a narrow viewport');
+  fs.mkdirSync('test-output/input-files',{recursive:true});await page.screenshot({path:'test-output/input-files/upload-failed-recovered.png'});
+  await page.getByRole('button',{name:'取消待上传文件',exact:true}).click();
+  assert.equal(await page.locator('#inputFileStatus').isHidden(),true);assert.equal(await page.locator('.input-file').count(),2);assert.equal(await page.locator('#input').inputValue(),sent.prompt);
+  assert.ok(await page.evaluate(()=>calls.some(call=>call[0]==='discardInputRetry')));
+  assert.deepEqual(errors,[]);
+  console.log('PASS upload interruption recovery: terminal cleanup, partial success/caption retention, offline retry guard, explicit retry, operation isolation, one send, restart recovery and narrow layout.');
+ }finally{await browser.close();}
+})().catch(error=>{console.error(error);process.exit(1);});

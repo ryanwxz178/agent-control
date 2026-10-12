@@ -24,6 +24,12 @@ final class PocketEngine {
     private volatile byte[] reconnectKey;
     private volatile boolean closed;
     private final AtomicInteger downloading=new AtomicInteger();
+    // Acquisition and connection checks share a gate: a heartbeat must never
+    // replace the SSH session while a selected file is being published.
+    private final Object connectionGate=new Object();
+    private int uploading;
+    private boolean connectionChanging;
+    private final AtomicLong connectionGeneration=new AtomicLong();
     private int reconnectAttempts;
     private long nextReconnect;
     private static final int MAX_RECONNECT_ATTEMPTS=3;
@@ -53,7 +59,10 @@ final class PocketEngine {
         actions.execute(()->{try{data.put("op",op).put("taskId",service.taskFor(field,identity));service.request(data);service.snapshot();}catch(Exception e){emit("serviceError","message",message(e));}});return true;
     }
     void checkConnection(){
-        if(closed || downloading.get()>0 || reconnectProfile==null || !busy.compareAndSet(false,true))return;
+        synchronized(connectionGate){
+            if(closed || uploading>0 || downloading.get()>0 || reconnectProfile==null || !busy.compareAndSet(false,true))return;
+            connectionChanging=true;
+        }
         try{control.execute(()->{
             try{
                 if(ssh.connected()){
@@ -76,14 +85,18 @@ final class PocketEngine {
                     if(reconnectAttempts>=MAX_RECONNECT_ATTEMPTS)emit("error","message","自动重连失败："+message(e)+"。请检查电脑唤醒状态和网络后手动连接。");
                 }
             }catch(Exception e){emit("connection","status","连接已断开");}
-            finally{busy.set(false);emit("busy","value",false);}
-        });}catch(RejectedExecutionException e){busy.set(false);}
+            finally{finishConnectionChange();}
+        });}catch(RejectedExecutionException e){finishConnectionChange();}
     }
-    void disconnect(){serviceReady=false;interactions.clear(null);attachments.clear();desktopRuns.clear();desktopViews.clear();reconnectProfile=null;reconnectKey=null;ssh.disconnect();emit("connection","status","未连接");}
+    private void finishConnectionChange(){synchronized(connectionGate){busy.set(false);connectionChanging=false;connectionGate.notifyAll();}emit("busy","value",false);}
+    void disconnect(){connectionGeneration.incrementAndGet();serviceReady=false;interactions.clear(null);attachments.clear();desktopRuns.clear();desktopViews.clear();reconnectProfile=null;reconnectKey=null;ssh.disconnect();emit("connection","status","未连接");}
     void emit(String type,String key,Object value){try{host.event(type,new JSONObject().put(key,value));}catch(Exception ignored){}}
     void connect(JSONObject p,byte[] key){
-        if(downloading.get()>0){emit("error","message","附件正在读取，请稍后再更换连接");return;}
-        if(!busy.compareAndSet(false,true)){emit("error","message","当前任务尚未结束");return;}
+        synchronized(connectionGate){
+            if(uploading>0||downloading.get()>0){emit("error","message","附件正在传输，请稍后再更换连接");return;}
+            if(!busy.compareAndSet(false,true)){emit("error","message","当前任务尚未结束");return;}
+            connectionChanging=true;connectionGeneration.incrementAndGet();
+        }
         control.execute(()->{
             try{
                 String address=p.getString("host").trim(),user=p.getString("user").trim();int port=p.optInt("port",22);
@@ -96,7 +109,7 @@ final class PocketEngine {
                 reconnectProfile=new JSONObject(p.toString());reconnectKey=key==null?null:key.clone();
                 reconnectAttempts=0;nextReconnect=0;
             }catch(Exception e){ssh.disconnect();emit("error","message","连接失败："+message(e));emit("connection","status","未连接");}
-            finally{busy.set(false);emit("busy","value",false);}
+            finally{finishConnectionChange();}
         });
     }
     private void refresh(boolean recovered)throws Exception{
@@ -325,7 +338,21 @@ final class PocketEngine {
     }
     String computerKey(){return profile.optString("host")+"|"+profile.optInt("port",22)+"|"+profile.optString("user");}
     JSONObject uploadInput(String name,String mime,byte[] bytes)throws Exception{
-        if(!ssh.connected())throw new IllegalStateException("请先连接电脑再上传文件");
+        final long generation;
+        synchronized(connectionGate){
+            String selectedComputer=computerKey(),selectedDirectory=profile.optString("directory");
+            long waitUntil=System.nanoTime()+TimeUnit.SECONDS.toNanos(45);
+            while(connectionChanging&&!closed){
+                long remaining=waitUntil-System.nanoTime();
+                if(remaining<=0)throw new IllegalStateException("电脑连接恢复超时，请连接后重试上传");
+                TimeUnit.NANOSECONDS.timedWait(connectionGate,remaining);
+            }
+            if(closed||!ssh.connected())throw new IllegalStateException("请先连接电脑再上传文件");
+            if(!selectedComputer.equals(computerKey())||!selectedDirectory.equals(profile.optString("directory")))throw new IllegalStateException("电脑连接已改变，请重新选择文件");
+            uploading++;generation=connectionGeneration.get();
+        }
+        boolean failed=true;
+        try{
         if(bytes.length>20*1024*1024)throw new IllegalArgumentException("单个文件不能超过 20MB");
         String computer=computerKey(),directory=profile.optString("directory"),os=inventory.os;
         if(!Agent.absoluteDirectory(directory,os))throw new IllegalArgumentException("请先设置有效的电脑工作目录");
@@ -334,10 +361,18 @@ final class PocketEngine {
         String path=folder+"/"+UUID.randomUUID()+"-"+safe;
         String mkdir=os.equals("Windows")?Agent.powershell("New-Item -ItemType Directory -Force -Path "+Agent.psQuote(folder)+" | Out-Null"):"mkdir -p -- "+Agent.quote(folder)+" && chmod 700 "+Agent.quote(folder);
         ssh.run(mkdir,"",line->{},new AtomicBoolean(),15000);
-        if(!computer.equals(computerKey()))throw new IllegalStateException("电脑连接已改变，请重新上传");
+        checkUploadConnection(computer,directory,generation);
         ssh.upload(path,bytes);
-        if(!computer.equals(computerKey()))throw new IllegalStateException("电脑连接已改变，请重新上传");
-        return new JSONObject().put("name",name).put("mime",mime).put("size",bytes.length).put("path",path).put("computer",computer).put("directory",directory);
+        checkUploadConnection(computer,directory,generation);
+        JSONObject result=new JSONObject().put("name",name).put("mime",mime).put("size",bytes.length).put("path",path).put("computer",computer).put("directory",directory);
+        failed=false;return result;
+        }finally{
+            synchronized(connectionGate){uploading--;}
+            if(failed)checkConnection();
+        }
+    }
+    private void checkUploadConnection(String computer,String directory,long generation){
+        if(closed||!ssh.connected()||connectionGeneration.get()!=generation||!computer.equals(computerKey())||!directory.equals(profile.optString("directory")))throw new IllegalStateException("电脑连接已改变，附件未添加，请重新上传");
     }
     void respond(String token,JSONObject answer){if(remote("respond",fields("token",token,"answer",answer),"token",token))return;actions.execute(()->{try{interactions.respond(token,answer);}catch(Exception e){emit("notice","message",message(e));}});}
     void download(String id){downloading.incrementAndGet();actions.execute(()->{try{
@@ -383,5 +418,5 @@ final class PocketEngine {
     }
     static String message(Exception e){return e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();}
     void cancel(){if(profile.optBoolean("taskService")){emit("notice","message","持久任务请从任务卡片停止；关闭手机不会中断电脑任务。");return;}cancelled.set(true);interactions.clear(null);ssh.cancel();}
-    void close(){closed=true;reconnectProfile=null;reconnectKey=null;monitor.shutdownNow();cancel();ssh.close();control.shutdownNow();actions.shutdownNow();}
+    void close(){closed=true;synchronized(connectionGate){connectionGate.notifyAll();}reconnectProfile=null;reconnectKey=null;monitor.shutdownNow();cancel();ssh.close();control.shutdownNow();actions.shutdownNow();}
 }
