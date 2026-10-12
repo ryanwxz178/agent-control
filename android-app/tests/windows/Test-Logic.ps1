@@ -76,17 +76,22 @@ $nodes=Tree; $nodes[1].role='Group'
 $rejected=$false; try { Get-ReplyState $nodes $profiles.doubao '你好' | Out-Null } catch { $rejected=$true }
 Assert $rejected 'unknown transcript scope fails closed'
 $nodes=Tree; $nodes[5].name='WorkBuddy';$nodes[6].role='Text';$nodes[6].name='已完成 26s'
+$nodes+=Node 7 1 'Group' '';4..6|ForEach-Object{$nodes[$_].parent=7};$nodes+=Node 8 1 'Button' '发送';$nodes+=Node 9 7 'Button' '复制'
 $reply=Get-ReplyState $nodes $profiles.workbuddy '你好'
 Assert (!$reply.complete) 'WorkBuddy header without answer cannot finish'
-$nodes+=(Node 7 1 'Text' 'WIN-TEST-');$nodes+=(Node 8 1 'Text' '1');$nodes+=(Node 9 1 'Button' '复制');$nodes[9]|Add-Member className '_copyButton_1ncbp_1 '
+$nodes+=(Node 10 7 'Text' 'WIN-TEST-');$nodes+=(Node 11 7 'Text' '1');$nodes+=(Node 12 7 'Button' '复制');$nodes[12]|Add-Member className '_copyButton_1ncbp_1 '
 $reply=Get-ReplyState $nodes $profiles.workbuddy '你好'
 Assert ($reply.complete -and $reply.text -ceq 'WIN-TEST-1') 'WorkBuddy answer after header joins inline fragments without metadata'
-$nodes[7]|Add-Member top 10;$nodes[7]|Add-Member height 15;$nodes[8]|Add-Member top 30
+$nodes[10]|Add-Member top 10;$nodes[10]|Add-Member height 15;$nodes[11]|Add-Member top 30
 $reply=Get-ReplyState $nodes $profiles.workbuddy '你好'
 Assert ($reply.text -ceq "WIN-TEST-`n1") 'WorkBuddy separate visual lines retain newline'
-$nodes+=Node 10 1 'Button' '停止'
+$nodes[8]=Node 8 1 'Button' '停止'
 $reply=Get-ReplyState $nodes $profiles.workbuddy '你好'
 Assert (!$reply.complete) 'WorkBuddy answer toolbar while busy cannot finish'
+$observed=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Text' '你好'),(Node 3 1 'Group' ''),(Node 4 3 'Group' ''),(Node 5 4 'Text' ([string][char]0xFEFF)),(Node 6 4 'Text' '你'),(Node 7 4 'Text' ([string][char]0xFEFF)),(Node 8 4 'Text' '好'),(Node 9 3 'Text' '已完成 15s'),(Node 10 3 'Text' '正确回复'),(Node 11 3 'Button' '复制'),(Node 12 1 'Edit' '' ''),(Node 13 1 'Button' '发送'))
+$observed[11]|Add-Member className '_copyButton_1ncbp_1 '
+$reply=Get-ReplyState $observed $profiles.workbuddy '你好'
+Assert ($reply.sent -and $reply.complete -and $reply.text -ceq '正确回复') 'observed WorkBuddy header repeats the request outside chat; zero-width text runs do not duplicate it'
 $id=[Guid]::NewGuid().ToString('N'); $broker=[Guid]::NewGuid().ToString('N'); $now=[DateTime]::UtcNow
 $r=@{protocol=1;id=$id;brokerId=$broker;createdUtc=$now.ToString('o');prompt='test'}
 Assert-FreshRequest $r $id $broker $now
@@ -125,13 +130,23 @@ try {
 } finally { [IO.Directory]::Delete($Root,$true) }
 # Compile the P/Invoke helper without invoking Windows APIs on this host.
 $desktopSource=Get-Content "$repo/windows/Desktop.ps1" -Raw -Encoding UTF8
+$desktopAst=[Management.Automation.Language.Parser]::ParseInput($desktopSource,[ref]$tokens,[ref]$parseErrors)
+$conversationWriter=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Save-DesktopConversation'},$true)
+Invoke-Expression $conversationWriter.Extent.Text
+$conversationFolder=Join-Path ([IO.Path]::GetTempPath()) ('orca-conversation-test-'+[Guid]::NewGuid().ToString('N'))
+try{
+    $conversationFile=Join-Path $conversationFolder 'conversation.json'
+    Save-DesktopConversation $conversationFile @{status='pending';prompt='中文请求'}
+    Save-DesktopConversation $conversationFile @{status='complete';prompt='中文请求'}
+    Assert (([IO.File]::ReadAllText($conversationFile,[Text.Encoding]::UTF8)|ConvertFrom-Json).status -eq 'complete') 'desktop completion replaces pending state on Windows PowerShell 5.1'
+}finally{if([IO.Directory]::Exists($conversationFolder)){[IO.Directory]::Delete($conversationFolder,$true)}}
 $native=[regex]::Match($desktopSource,"(?s)Add-Type -TypeDefinition @'\r?\n(.*?)\r?\n'@").Groups[1].Value
 Add-Type -TypeDefinition $native
 Assert ($null -ne ('PocketDesktop' -as [type])) 'native Windows API declarations compile'
 # Syntax-parse every production PowerShell file, including phone-delivered scripts.
 foreach ($file in @((Get-ChildItem "$repo/windows/*.ps1"),(Get-ChildItem "$repo/android-app/app/src/main/assets/*windows*.ps1")) | ForEach-Object { $_ }) {
     $tokens=$null; $errors=$null
-    [Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors) | Out-Null
+    [Management.Automation.Language.Parser]::ParseInput([IO.File]::ReadAllText($file.FullName,[Text.Encoding]::UTF8),[ref]$tokens,[ref]$errors) | Out-Null
     Assert ($errors.Count -eq 0) ("PowerShell syntax: " + $file.Name + ' ' + ($errors.Message -join '; '))
 }
 Write-Output "ALL $script:passed WINDOWS LOGIC CHECKS PASSED"

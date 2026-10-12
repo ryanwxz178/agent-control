@@ -9,6 +9,8 @@
     "complete": "^(已完成([，,， ].*)?|任务完成|Task completed|Completed)$",
     "chatId": "",
     "editorId": "",
+    "chatEditorParent": true,
+    "messageCopyScope": true,
     "blank": "^(WorkBuddy, 我帮你|今天帮你做些什么.*|你想完成什么.*|有什么可以帮.*|开始新任务.*|What would you like.*|How can I help.*)$",
     "launchArgs": [
       "--force-renderer-accessibility=complete",

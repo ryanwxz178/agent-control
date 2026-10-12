@@ -22,7 +22,7 @@ class ConversationQueue {
 const museQueue=new ConversationQueue();
 const pendingSubmissions=new Map();
 const pendingHere=()=>[...pendingSubmissions.values()].includes(state.conversationId);
-let queueCompletion=null,serviceTasks=[],serviceReady=false,taskTab='conversations',browserSession='',browserWorking=false;
+let queueCompletion=null,serviceTasks=[],serviceReady=false,taskTab='conversations',browserSession='',browserWorking=false,pendingConversationStart=null,endConversationTimer;
 const taskSeen=new Map();
 const taskLabels={queued:'等待开始',running:'正在执行',waiting_approval:'等待确认',waiting_input:'等待补充',scheduled:'定期检查',paused:'已暂停',succeeded:'已完成',failed:'未完成',cancelled:'已取消',unverifiable:'状态待确认'};
 const liveTask=t=>['queued','running','waiting_approval','waiting_input'].includes(t.status);
@@ -67,8 +67,8 @@ syncComposer=function(){
 };
 const originalSetBusy=setBusy;
 setBusy=function(value){
-  const previous=busy;originalSetBusy(value);
-  if(state.profile.taskService){$('newChat').disabled=false;$('agentButton').disabled=false;$('accessMode').disabled=false;}
+  const previous=busy;value=value||!!pendingConversationStart;originalSetBusy(value);
+  if(state.profile.taskService){$('newChat').disabled=!!pendingConversationStart;$('agentButton').disabled=!!pendingConversationStart;$('accessMode').disabled=!!pendingConversationStart;}
   if(previous&&!value&&queueCompletion){const finish=queueCompletion;queueCompletion=null;finish();}
 };
 function saveDraft(){state.draft=$('input').value;persist();}
@@ -105,6 +105,8 @@ function dispatchMessage(text,messageId=cryptoId()){
   add({id:messageId,role:'user',text,createdAt:Date.now()});setBusy(true);call('send',JSON.stringify(request));
 }
 send=function(){
+  if(pendingConversationStart){toast('正在结束上一会话，请稍候');return;}
+  if(state.conversationClosed){toast('该会话已结束，请新建对话');return;}
   const text=$('input').value.trim();if(!text){if(busy)stopTask();return;}
   if(!connected){openSettings();return;}if(state.profile.taskService&&!serviceReady){toast('电脑任务服务正在准备，请稍候再发送');return;}if(!bridge){toast('预览模式不能发送');return;}
   $('input').value='';$('input').style.height='auto';saveDraft();
@@ -132,16 +134,35 @@ persist=function(){
   },350);
 };
 function archiveConversation(){
-  const record={id:state.conversationId,selected:state.selected,messages:state.messages,draft:$('input').value,outbox:[...museQueue.getSnapshot().pending],title:state.messages.find(m=>m.role==='user')?.text.slice(0,40)||'新对话'};
+  const record={id:state.conversationId,closed:!!state.conversationClosed,selected:state.selected,messages:state.messages,draft:$('input').value,outbox:[...museQueue.getSnapshot().pending],title:state.messages.find(m=>m.role==='user')?.text.slice(0,40)||'新对话'};
   state.conversations=[...(state.conversations||[]).filter(c=>c.id!==record.id),record].slice(-10);
 }
 const originalStart=startConversation;
-startConversation=function(){archiveConversation();museQueue.pause();museQueue.update({pending:[],running:false,paused:false});taskSeen.clear();originalStart();state.draft='';setBusy(false);};
+function finishConversationStart(nextAgent){
+  clearTimeout(endConversationTimer);pendingConversationStart=null;state.conversationClosed=true;closeInteractions('会话已结束');archiveConversation();
+  museQueue.update({pending:[],running:false,paused:false});taskSeen.clear();setBusy(false);state.conversationClosed=false;originalStart(nextAgent);state.draft='';agentList();updateSelection();persist();toast('已结束上一会话，开始新对话');
+}
+function requestConversationEnd(){
+  if(!pendingConversationStart)return;
+  call('taskRequest',JSON.stringify({op:'endConversation',conversationId:pendingConversationStart.id}));
+}
+startConversation=function(nextAgent=state.selected){
+  if(pendingConversationStart)return;
+  if(state.profile.taskService&&!connected&&(state.messages.length||currentTasks().length||pendingHere())){toast('请先连接电脑，确认上一会话结束后再开始');return;}
+  if(state.profile.taskService&&connected&&(state.messages.length||currentTasks().length||pendingHere())){
+    if(!serviceReady){toast('等待电脑任务服务就绪后再结束会话');return;}
+    pendingConversationStart={id:state.conversationId,nextAgent};museQueue.pause();museQueue.update({pending:[]});setBusy(true);$('taskLabel').textContent='正在结束上一会话…';requestConversationEnd();return;
+  }
+  if(busy){museQueue.pause();museQueue.update({pending:[]});pendingConversationStart={id:state.conversationId,nextAgent};call('cancel');$('taskLabel').textContent='正在结束上一会话…';return;}
+  finishConversationStart(nextAgent);
+};
+$('newChat').onclick=()=>startConversation();
 function switchConversation(id){
+  if(pendingConversationStart){toast('正在结束上一会话，请稍候');return;}
   if(id===state.conversationId){$('taskSheet').close();return;}
   if(!state.profile.taskService&&busy){toast('当前任务结束后再切换会话');return;}
   archiveConversation();const local=state.conversations.find(c=>c.id===id),remote=serviceTasks.find(t=>t.request.conversationId===id);
-  state.conversationId=id;state.messages=local?.messages||[];state.selected=local?.selected||remote?.request.agent||'auto';$('input').value=local?.draft||'';
+  state.conversationId=id;state.conversationClosed=!!local?.closed;state.messages=local?.messages||[];state.selected=local?.selected||remote?.request.agent||'auto';$('input').value=local?.draft||'';
   museQueue.update({pending:local?.outbox||[],running:false,paused:true});taskSeen.clear();render();setBusy(false);$('taskSheet').close();if(state.profile.taskService)applyTasks(serviceTasks);persist();syncComposer();
 }
 function taskControls(task){
@@ -154,14 +175,14 @@ function drawTaskList(){
   for(const [name,id]of [['conversations','conversationsTab'],['tasks','tasksTab'],['browser','browserTab']])$(id).setAttribute('aria-pressed',String(taskTab===name));
   if(taskTab==='browser')return;
   if(taskTab==='conversations'){
-    const entries=new Map((state.conversations||[]).map(c=>[c.id,c]));entries.set(state.conversationId,{id:state.conversationId,title:state.messages.find(m=>m.role==='user')?.text||'当前对话'});
+    const entries=new Map((state.conversations||[]).map(c=>[c.id,c]));entries.set(state.conversationId,{id:state.conversationId,messages:state.messages,title:state.messages.find(m=>m.role==='user')?.text||'当前对话'});
     for(const task of serviceTasks){const id=task.request.conversationId;if(id&&!entries.has(id))entries.set(id,{id,title:task.request.prompt});}
-    for(const entry of [...entries.values()].reverse()){const button=document.createElement('button');button.className='conversation-row';const title=document.createElement('strong');title.textContent=entry.title||'新对话';const detail=document.createElement('small');const tasks=serviceTasks.filter(t=>t.request.conversationId===entry.id);detail.textContent=entry.id===state.conversationId?'当前会话':tasks.some(liveTask)?'电脑正在执行':'点按继续对话';button.append(title,detail);button.onclick=()=>switchConversation(entry.id);list.append(button);}
+    for(const entry of [...entries.values()].reverse()){const button=document.createElement('button');button.className='conversation-row';const title=document.createElement('strong');title.textContent=entry.title||'新对话';const detail=document.createElement('small');const tasks=serviceTasks.filter(t=>t.request.conversationId===entry.id);const times=[...(entry.messages||[]).map(recordedTime),...tasks.map(recordedTime)].filter(t=>t!==null);const time=times.length?Math.max(...times):recordedTime(entry);detail.textContent=(entry.id===state.conversationId?'当前会话':tasks.some(liveTask)?'电脑正在执行':entry.closed?'已结束 · 查看记录':'点按继续对话')+' · '+formatTime(time);button.append(title,detail);button.onclick=()=>switchConversation(entry.id);list.append(button);}
   }else for(const task of [...serviceTasks].reverse()){
     const card=document.createElement('article');card.className='task-card';const status=document.createElement('small');status.textContent=taskLabels[task.status]||task.status;status.dataset.status=task.status;
-    const title=document.createElement('h3');title.textContent=task.request.prompt.slice(0,180);const meta=document.createElement('p');meta.textContent=new Date(task.createdAt).toLocaleString('zh-CN')+' · '+(state.agents.find(a=>a.id===task.request.agent)?.name||'自动调度');card.append(status,title,meta);
+    const title=document.createElement('h3');title.textContent=task.request.prompt.slice(0,180);const meta=document.createElement('p');meta.textContent=formatTime(recordedTime(task))+' · '+(state.agents.find(a=>a.id===task.request.agent)?.name||'自动调度');card.append(status,title,meta);
     if(task.error){const error=document.createElement('p');error.className='error';error.textContent=task.error;card.append(error);}
-    const steps=(task.events||[]).filter(e=>e.type==='run');for(const step of steps){const line=document.createElement('p');const finished=task.events.find(e=>e.type==='update'&&e.data.id===step.data.id)?.data.status;line.textContent=step.data.agent+' · '+step.data.label+' · '+(finished||'等待回复');card.append(line);}
+    const steps=(task.events||[]).filter(e=>e.type==='run');for(const step of steps){const line=document.createElement('p');const finished=task.events.find(e=>e.type==='update'&&e.data.id===step.data.id)?.data.status;line.textContent=step.data.agent+' · '+step.data.label+' · '+(['failed','unverifiable','cancelled'].includes(task.status)?taskLabels[task.status]:finished||'等待回复');card.append(line);}
     card.append(taskControls(task));const open=document.createElement('button');open.className='text-button';open.textContent='查看对话';open.onclick=()=>switchConversation(task.request.conversationId);card.append(open);list.append(card);
   }
   if(!list.children.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='电脑上的任务会显示在这里。连接后发送一条消息开始。';list.append(empty);}
@@ -179,6 +200,7 @@ function applyTasks(tasks){
     let seen=taskSeen.get(task.id)||0;
     for(const event of [...task.events].sort((a,b)=>a.seq-b.seq)){
       const data={...event.data};if(event.seq<=seen)continue;
+      if(event.type==='run')data.createdAt=event.createdAt??data.createdAt??task.createdAt;
       if(event.type==='run'&&state.messages.some(m=>m.id===data.id)){seen=Math.max(seen,event.seq);continue;}
       if(event.type==='interaction'){
         const m=state.messages.find(m=>m.id===data.id);if(m)m.interactions=(m.interactions||[]).filter(i=>i.token!==data.token);
@@ -190,10 +212,10 @@ function applyTasks(tasks){
     taskSeen.set(task.id,seen);
     for(const message of state.messages.filter(m=>m.taskId===task.id&&m.browsers?.length)){const node=findNode(message.id);if(node)renderExtras(node,message);}
     if(['failed','unverifiable','cancelled'].includes(task.status)){
-      if(!state.messages.some(m=>m.taskId===task.id&&m.role==='assistant'))add({id:task.id+'_outcome',role:'assistant',agent:state.agents.find(a=>a.id===task.request.agent)?.name||'电脑任务',text:task.error||taskLabels[task.status],status:task.status==='failed'?'失败：'+(task.error||'任务未开始执行'):taskLabels[task.status],taskId:task.id});
+      if(!state.messages.some(m=>m.taskId===task.id&&m.role==='assistant'))add({id:task.id+'_outcome',role:'assistant',agent:state.agents.find(a=>a.id===task.request.agent)?.name||'电脑任务',text:task.error||taskLabels[task.status],status:task.status==='failed'?'失败：'+(task.error||'任务未开始执行'):taskLabels[task.status],taskId:task.id,createdAt:task.events.at(-1)?.createdAt??task.createdAt});
       if(task.id===currentTasks().filter(t=>t.request.kind!=='monitor').at(-1)?.id)museQueue.pause();
       for(const message of state.messages.filter(m=>m.taskId===task.id)){for(const interaction of message.interactions||[]){interaction.state='closed';interaction.message='任务已结束，原确认失效';}const node=findNode(message.id);if(node)renderExtras(node,message);}
-      for(const message of state.messages.filter(m=>m.taskId===task.id&&m.role==='assistant'&&m.status!=='已完成')){message.status=task.status==='failed'?'失败：'+task.error:taskLabels[task.status];const node=findNode(message.id);if(node)updateMessage(node,message);}
+      for(const message of state.messages.filter(m=>m.taskId===task.id&&m.role==='assistant'&&m.status!=='已完成')){message.status=task.status==='failed'?'失败：'+task.error:taskLabels[task.status];if(!message.text?.trim())message.text=task.error||'任务已中断，请在电脑确认执行结果。';const node=findNode(message.id);if(node)updateMessage(node,message);}
     }
   }
   const active=currentTasks().filter(liveTask);setBusy(active.length>0||pendingHere());
@@ -202,12 +224,18 @@ function applyTasks(tasks){
   if($('taskSheet').open)drawTaskList();persist();
 }
 window.receive=(type,data)=>{
+  if(type==='serviceResponse'&&data.conversationId===pendingConversationStart?.id){
+    if(data.conversationEnded)finishConversationStart(pendingConversationStart.nextAgent);
+    else{clearTimeout(endConversationTimer);endConversationTimer=setTimeout(requestConversationEnd,500);}
+    return;
+  }
   if(type==='serviceSnapshot'){if(serviceReady)$('serviceBanner').hidden=true;applyTasks(data.tasks||[]);$('footerHint').textContent='电脑持续执行 · 重连可查看结果';return;}
   if(type==='serviceReady'){serviceReady=true;$('serviceBanner').hidden=true;return;}
-  if(type==='serviceError'){pendingSubmissions.clear();museQueue.pause();setBusy(currentTasks().some(liveTask));browserWorking=false;$('browserStatus').textContent=data.message;$('serviceBanner').hidden=false;$('serviceBanner').textContent=data.message;toast(data.message);return;}
+  if(type==='serviceError'){clearTimeout(endConversationTimer);pendingConversationStart=null;pendingSubmissions.clear();museQueue.pause();setBusy(currentTasks().some(liveTask));browserWorking=false;$('browserStatus').textContent=data.message;$('serviceBanner').hidden=false;$('serviceBanner').textContent=data.message;toast(data.message);return;}
   if(type==='serviceResponse'){if(data.browserClosed){browserWorking=false;$('browserViewer').close();browserSession='';toast('浏览器会话已结束');}if(data.browser)showBrowser(data.browser);return;}
   if(type==='busy'&&state.profile.taskService&&serviceReady){if(!data.value)setBusy(currentTasks().some(liveTask)||pendingHere());return;}
   originalReceive(type,data);
+  if(type==='busy'&&!data.value&&!state.profile.taskService&&pendingConversationStart){finishConversationStart(pendingConversationStart.nextAgent);return;}
   if(type==='restore'){
     state.profile.taskService=data.profile?.taskService!==false;state.conversations=state.conversations||[];
     $('input').value=state.draft||'';museQueue.update({pending:state.outbox||[],paused:true,running:false});applySettings();syncComposer();

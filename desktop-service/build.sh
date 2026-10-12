@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 TASK_JAVA="${JAVA_HOME:-$PWD/.toolchain/jdk-17.0.20.1+1/Contents/Home}"
 TASK_BUILD="$PWD/desktop-service/build"
 mkdir -p "$TASK_BUILD/classes/assets"
-"$TASK_JAVA/bin/javac" --release 17 -encoding UTF-8 -cp 'android-app/libs/json-20240303.jar:android-app/libs/jsch-0.2.26.jar:android-app/libs/bcprov-jdk18on-1.77.jar' -d "$TASK_BUILD/classes" android-app/app/src/main/java/dev/orca/pocket/{Agent,Inventory,EventDecoder,SshTransport,TaskRouter,Interactions,Attachments,RemoteImages,CodexSession,AcpSession,PocketEngine,PersistentClient}.java desktop-service/src/dev/orca/pocket/*.java
+"$TASK_JAVA/bin/javac" --release 17 -encoding UTF-8 -cp 'android-app/libs/json-20240303.jar:android-app/libs/jsch-0.2.26.jar:android-app/libs/bcprov-jdk18on-1.77.jar' -d "$TASK_BUILD/classes" android-app/app/src/main/java/dev/orca/pocket/{Agent,Inventory,EventDecoder,SshTransport,TaskRouter,Interactions,Attachments,RemoteImages,CodexSession,AcpSession,TeleAgentSession,PocketEngine,PersistentClient}.java desktop-service/src/dev/orca/pocket/*.java
 python3 - <<'PY'
 from pathlib import Path
 import zipfile, shutil

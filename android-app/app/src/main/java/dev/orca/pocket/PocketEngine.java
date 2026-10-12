@@ -165,7 +165,8 @@ final class PocketEngine {
                     agent=chooseAccess(inventory,agent,mode);
                     runner.run(agent,context,write,"回复");
                 }
-            }catch(CancellationException e){emit("notice","message","已停止接收并请求中断。桌面应用或远端子任务可能仍在执行，请到电脑确认。");}
+            }catch(EventDecoder.DesktopEnded e){emit("notice","message","原桌面会话已确认结束。");}
+            catch(CancellationException e){emit("notice","message","已停止接收并请求中断。桌面应用或远端子任务可能仍在执行，请到电脑确认。");}
             catch(Exception e){emit("error","message",message(e));}
             finally{busy.set(false);emit("busy","value",false);if(!ssh.connected())emit("connection","status","连接已断开");}
         });
@@ -213,6 +214,11 @@ final class PocketEngine {
                 }
                 result=decoder.text();
                 if(!decoder.completed&&!decoder.failed)throw new IllegalStateException("桌面连接结束但没有完成事件，执行状态未知；请在电脑确认");
+            }else if(a.kind.equals("teleagent")){
+                if(!inventory.os.equals("Windows")||a.command.size()!=2)throw new IllegalStateException("TeleAgent 后台 CLI 目前仅支持 Windows");
+                ssh.interactiveWindowsScript(teleAgentWindowsScript(a,directory),new TeleAgentSession(run,prompt,directory,computerKey(),a.name,write,decoder,interactions,attachments),cancelled,900000);
+                result=decoder.text();
+                if(!decoder.completed)throw new IllegalStateException("TeleAgent 后台连接结束但没有完成事件，执行状态未知");
             }else if(a.kind.equals("codex")){
                 ssh.interactive(CodexSession.command(a,directory,inventory.os),new CodexSession(run,prompt,directory,write,computerKey(),decoder,interactions,attachments,host.agentConfig(run),host.durable()),cancelled,900000);
                 result=decoder.text();
@@ -256,9 +262,16 @@ final class PocketEngine {
                 host.event("update",new JSONObject().put("id",run).put("text","CLI 启动失败，正在使用电脑上的 "+a.name+" 桌面应用。").put("status","已自动切换桌面"));
                 return runAgent(inventory.desktopAgent(a.id),prompt,write,label,directory,true,hostPermissions,conversationId,currentPrompt);
             }
-            host.event("update",new JSONObject().put("id",run).put("text",decoder.text()).put("status",cancelled.get()?"状态待确认":"失败："+message(e)));
+            host.event("update",new JSONObject().put("id",run).put("text",decoder.text()).put("status",e instanceof EventDecoder.DesktopEnded?"已结束":cancelled.get()?"状态待确认":"失败："+message(e)));
             throw e;
         }finally{interactions.clear(run);if(activeDesktopRun.equals(run))activeDesktopRun="";}
+    }
+    private String teleAgentWindowsScript(Agent agent,String directory)throws Exception{
+        String[] assets={"teleagent-auth.js","teleagent-config.js","teleagent-headless-cli.js"};
+        StringBuilder script=new StringBuilder("Set-Location -LiteralPath "+Agent.psQuote(directory)+"; $moduleFiles=@(); try { ");
+        for(int i=0;i<assets.length;i++)script.append("$module").append(i).append("=$PSCommandPath+'.teleagent-").append(i).append(".js'; $moduleFiles+= $module").append(i).append("; [IO.File]::WriteAllText($module").append(i).append(',').append(Agent.psQuote(host.asset(assets[i]))).append(",[Text.UTF8Encoding]::new($false)); ");
+        script.append("$env:TELEAGENT_BRIDGE_AUTH_MODULE=$module0; $env:TELEAGENT_BRIDGE_CONFIG_MODULE=$module1; $env:TELEAGENT_DESKTOP_PATH=").append(Agent.psQuote(agent.command.get(1))).append("; & ").append(Agent.psQuote(agent.command.get(0))).append(" $module2; $code=$LASTEXITCODE } finally { foreach($file in $moduleFiles){[IO.File]::Delete($file)} }; exit $code");
+        return script.toString();
     }
     void listDownloads(String run){if(remote("listDownloads",fields("run",run),"id",run))return;actions.execute(()->{try{
         JSONObject context=desktopRuns.get(run);if(context==null||!context.optString("computer").equals(computerKey()))throw new IllegalStateException("原电脑连接已改变");

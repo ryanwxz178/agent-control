@@ -11,6 +11,7 @@ import org.json.*;
 /** Execution belongs to the computer. Disconnecting a phone never closes this transport. */
 final class LocalTransport extends SshTransport {
     private final Set<Process> children=ConcurrentHashMap.newKeySet();
+    private final Map<Process,List<ProcessHandle>> terminating= new ConcurrentHashMap<>();
     private final ScheduledExecutorService deadlines=Executors.newSingleThreadScheduledExecutor();
     private volatile boolean open=true;
     @Override public boolean connected(){return open;}
@@ -21,10 +22,11 @@ final class LocalTransport extends SshTransport {
         Process child=builder.start();children.add(child);return child;
     }
     private void terminate(Process child){
-        if(!child.isAlive())return;
+        if(!child.isAlive()||terminating.containsKey(child))return;
+        List<ProcessHandle> descendants=child.descendants().toList();terminating.put(child,descendants);
         // Record the outcome as unverifiable elsewhere: signalling cannot prove every descendant exited.
-        child.descendants().forEach(p->{try{p.destroy();}catch(Exception ignored){}});child.destroy();
-        if(!deadlines.isShutdown())deadlines.schedule(()->{child.descendants().forEach(p->{try{p.destroyForcibly();}catch(Exception ignored){}});child.destroyForcibly();},2,TimeUnit.SECONDS);
+        descendants.forEach(p->{try{p.destroy();}catch(Exception ignored){}});child.destroy();
+        if(!deadlines.isShutdown())deadlines.schedule(()->{descendants.forEach(p->{try{if(p.isAlive())p.destroyForcibly();}catch(Exception ignored){}});child.destroyForcibly();},2,TimeUnit.SECONDS);
     }
     private void execute(String command,String stdin,Line callback,Duplex duplex,AtomicBoolean cancelled,long timeout)throws Exception{
         if(!open||cancelled.get())throw new CancellationException();
@@ -53,7 +55,13 @@ final class LocalTransport extends SshTransport {
             int exit=child.waitFor();drain.join(1000);
             if(exit!=0)throw new IOException("远端退出码 "+exit+"："+errors.toString("UTF-8"));
             if(duplex!=null)throw new IOException("交互通道结束，执行状态未知；不会重发任务");
-        }finally{deadline.cancel(false);stop.cancel(false);children.remove(child);terminate(child);}
+        }finally{
+            deadline.cancel(false);stop.cancel(false);terminate(child);
+            List<ProcessHandle> descendants=terminating.getOrDefault(child,List.of());long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(3);
+            while((child.isAlive()||descendants.stream().anyMatch(ProcessHandle::isAlive))&&System.nanoTime()<until)Thread.sleep(50);
+            if(child.isAlive()||descendants.stream().anyMatch(ProcessHandle::isAlive))throw new IOException("电脑任务进程尚未退出，不能确认会话已结束");
+            children.remove(child);terminating.remove(child);
+        }
     }
     @Override public int run(String command,String stdin,Line line,AtomicBoolean cancelled,long timeout)throws Exception{execute(command,stdin,line,null,cancelled,timeout);return 0;}
     @Override public void interactive(String command,Duplex protocol,AtomicBoolean cancelled,long timeout)throws Exception{execute(command,"",null,protocol,cancelled,timeout);}

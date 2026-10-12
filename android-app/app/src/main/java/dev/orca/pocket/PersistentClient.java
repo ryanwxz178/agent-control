@@ -60,7 +60,7 @@ final class PersistentClient {
         if(jar==null)throw new IllegalStateException("持久任务服务未就绪，请重新连接电脑");
         String file=root+"/rpc-"+UUID.randomUUID()+".json";ssh.upload(file,value.toString().getBytes(StandardCharsets.UTF_8));
         List<String> lines=new ArrayList<>();
-        String command=os.equals("Windows")?Agent.powershell("& "+Agent.psQuote(java)+" '-cp' "+Agent.psQuote(jar)+" 'dev.orca.pocket.TaskService' '--file' "+Agent.psQuote(file)+"; exit $LASTEXITCODE"):
+        String command=os.equals("Windows")?Agent.powershell("& "+Agent.psQuote(java)+" '-Dfile.encoding=UTF-8' '-cp' "+Agent.psQuote(jar)+" 'dev.orca.pocket.TaskService' '--file' "+Agent.psQuote(file)+"; exit $LASTEXITCODE"):
             Agent.login("exec "+Agent.quote(java)+" -cp "+Agent.quote(jar)+" dev.orca.pocket.TaskService --file "+Agent.quote(file));
         ssh.run(command,"",lines::add,new AtomicBoolean(),60000);
         JSONObject response=null;for(String line:lines)if(line.startsWith("{"))response=new JSONObject(line);

@@ -3,8 +3,11 @@ package dev.orca.pocket;
 import java.io.*;
 import java.nio.channels.*;
 import java.nio.file.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.json.*;
 
 /** Single-owner service. IPC is protected by the SSH user's private filesystem, not a network port. */
@@ -47,7 +50,11 @@ public final class TaskService {
                     }
                     if(type.equals("interaction")){task.put("status",data.optString("kind").equals("questions")?"waiting_input":"waiting_approval");store.save(task);}
                     if(type.equals("interactionState")&&task.optString("status").startsWith("waiting_")){task.put("status","running");store.save(task);}
-                    if(type.equals("error")){task.put("status","failed").put("error",data.optString("message"));store.save(task);}
+                    if(type.equals("error")){
+                        if(!task.optString("status").equals("cancelled"))task.put("status","failed").put("error",data.optString("message"));
+                        else if(data.optString("message").contains("不能确认会话已结束"))task.put("endError",data.optString("message"));
+                        store.save(task);
+                    }
                     if(type.equals("attachment")){
                         PocketEngine current=engines.get(id);Attachments.FileRef file=current==null?null:current.attachments.get(data.getString("attachmentId"));
                         if(file!=null){
@@ -126,7 +133,35 @@ public final class TaskService {
         }
         if(operation.equals("snapshot"))return new JSONObject().put("tasks",store.snapshot()).put("inventory",inventory).put("inventoryError",inventoryError).put("version","0.5.6").put("runtime",new File(TaskService.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getAbsolutePath());
         if(operation.equals("shutdownIfIdle")){if(!active.isEmpty())return new JSONObject().put("deferred",true);stopping=true;return new JSONObject().put("deferred",false);}
-        if(operation.equals("submit")){JSONObject result=store.create(input.getJSONObject("request"));schedule();return new JSONObject().put("task",result);}
+        if(operation.equals("endConversation")){
+            String conversation=TaskStore.key(input.getString("conversationId"));
+            Path closed=store.root.resolve("closed-conversations");TaskStore.privateDirectory(closed);
+            TaskStore.atomic(closed.resolve(conversation),new byte[0]);
+            JSONArray tasks=store.list();boolean ended=true,desktopPending=false;
+            if(System.getProperty("os.name").startsWith("Windows")){
+                List<String> desktopState=new ArrayList<>();
+                try(LocalTransport signal=new LocalTransport()){
+                    signal.runWindowsScript(asset("desktop-windows-end.ps1").replace("__CONVERSATION__",conversation),desktopState::add,new java.util.concurrent.atomic.AtomicBoolean(),15000);
+                }
+                desktopPending=desktopState.contains("DESKTOP_END_PENDING");ended=!desktopPending;
+            }
+            for(int n=0;n<tasks.length();n++){
+                JSONObject previous=tasks.getJSONObject(n);if(!previous.getJSONObject("request").optString("conversationId").equals(conversation))continue;
+                if(previous.has("endError"))throw new IllegalStateException(previous.getString("endError"));
+                String previousId=previous.getString("id");
+                if(active.contains(previousId)){
+                    ended=false;previous.put("status","cancelled").put("error","会话已结束，已请求中断电脑任务。");store.save(previous);
+                    PocketEngine previousEngine=engines.get(previousId);if(previousEngine!=null&&!desktopPending)previousEngine.cancel();
+                    if(installations.containsKey(previousId))installations.get(previousId).set(true);
+                }else if(Set.of("queued","paused","scheduled").contains(previous.optString("status"))){previous.put("status","cancelled");store.save(previous);}
+            }
+            return new JSONObject().put("conversationEnded",ended).put("conversationId",conversation);
+        }
+        if(operation.equals("submit")){
+            JSONObject request=input.getJSONObject("request");String conversation=request.optString("conversationId");
+            if(!conversation.isEmpty()&&Files.exists(store.root.resolve("closed-conversations").resolve(TaskStore.key(conversation))))throw new IllegalStateException("该会话已结束，请开始新对话");
+            JSONObject result=store.create(request);schedule();return new JSONObject().put("task",result);
+        }
         String id=TaskStore.key(input.getString("taskId"));JSONObject task=store.get(id);PocketEngine e=engines.get(id);
         if(operation.equals("control")){
             String action=input.getString("action"),status=task.getString("status");
@@ -197,7 +232,7 @@ public final class TaskService {
         if(!running){
             if(!start)throw new IllegalStateException("任务服务未运行");
             String java=Paths.get(System.getProperty("java.home"),"bin",System.getProperty("os.name").startsWith("Windows")?"java.exe":"java").toString();
-            new ProcessBuilder(java,"-Dagent.control.data="+root,"-cp",System.getProperty("java.class.path"),TaskService.class.getName(),"serve").redirectInput(ProcessBuilder.Redirect.from(new File(System.getProperty("os.name").startsWith("Windows")?"NUL":"/dev/null"))).redirectOutput(ProcessBuilder.Redirect.appendTo(root.resolve("service.log").toFile())).redirectErrorStream(true).start();
+            startDetached(java,root);
         }
         String id=UUID.randomUUID().toString()+".json";Path response=root.resolve("responses").resolve(id);
         TaskStore.atomic(root.resolve("requests").resolve(id),input.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -205,8 +240,39 @@ public final class TaskService {
         while(System.currentTimeMillis()<until){if(Files.exists(response)){JSONObject result=new JSONObject(Files.readString(response));Files.deleteIfExists(response);return result;}Thread.sleep(100);}
         throw new IOException("服务响应超时；提交状态未知，请刷新任务列表，不要重复发送");
     }
+    static void startDetached(String java,Path root)throws Exception{
+        if(System.getProperty("os.name").startsWith("Windows")){
+            // OpenSSH kills its Windows job when the exec channel closes. WMI
+            // creates the service outside that job, under the requesting user.
+            String classpath=Arrays.stream(System.getProperty("java.class.path").split(Pattern.quote(File.pathSeparator))).map(entry->Paths.get(entry).toAbsolutePath().toString()).collect(Collectors.joining(File.pathSeparator));
+            String command=windowsArgument(java)+" -Dfile.encoding=UTF-8 "+windowsArgument("-Dagent.control.data="+root.toAbsolutePath())+" -cp "+windowsArgument(classpath)+" "+TaskService.class.getName()+" serve";
+            String script="$result=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine="+Agent.psQuote(command)+"}; if($result.ReturnValue -ne 0){throw ('Detached service startup failed: '+$result.ReturnValue)}; [Console]::WriteLine('SERVICE_STARTED')";
+            Process launcher=new ProcessBuilder("cmd.exe","/d","/s","/c",Agent.powershell(script)).redirectErrorStream(true).start();
+            if(!launcher.waitFor(20,TimeUnit.SECONDS)){launcher.destroyForcibly();throw new IOException("电脑常驻服务启动超时");}
+            String output=new String(launcher.getInputStream().readAllBytes(),StandardCharsets.UTF_8);
+            if(launcher.exitValue()!=0||!output.contains("SERVICE_STARTED"))throw new IOException("无法启动 Windows 常驻任务服务："+output);
+        }else{
+            new ProcessBuilder(java,"-Dfile.encoding=UTF-8","-Dagent.control.data="+root,"-cp",System.getProperty("java.class.path"),TaskService.class.getName(),"serve").redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null"))).redirectOutput(ProcessBuilder.Redirect.appendTo(root.resolve("service.log").toFile())).redirectErrorStream(true).start();
+        }
+    }
+    private static String windowsArgument(String value){
+        StringBuilder result=new StringBuilder("\"");int slashes=0;
+        for(char ch:value.toCharArray()){
+            if(ch=='\\'){slashes++;continue;}
+            if(ch=='\"'){result.append("\\".repeat(slashes*2+1)).append(ch);slashes=0;continue;}
+            result.append("\\".repeat(slashes)).append(ch);slashes=0;
+        }
+        return result.append("\\".repeat(slashes*2)).append('"').toString();
+    }
     public static void main(String[] args)throws Exception{
-        if(args.length>0&&args[0].equals("serve")){new TaskService(root()).serve();return;}
+        // Java 17 on Chinese Windows defaults to GBK; SSH and PowerShell use UTF-8.
+        System.setOut(new PrintStream(System.out,true,java.nio.charset.StandardCharsets.UTF_8));
+        System.setErr(new PrintStream(System.err,true,java.nio.charset.StandardCharsets.UTF_8));
+        if(args.length>0&&args[0].equals("serve")){
+            TaskStore.privateDirectory(root());
+            PrintStream log=new PrintStream(new FileOutputStream(root().resolve("service.log").toFile(),true),true,java.nio.charset.StandardCharsets.UTF_8);
+            System.setOut(log);System.setErr(log);new TaskService(root()).serve();return;
+        }
         String payload;
         if(args.length==2&&args[0].equals("--file")){Path file=Paths.get(args[1]);if(Files.size(file)>1000000)throw new IllegalArgumentException("请求过大");payload=Files.readString(file);Files.delete(file);}
         else payload=args.length>0?new String(Base64.getDecoder().decode(args[0]),java.nio.charset.StandardCharsets.UTF_8):new String(System.in.readNBytes(1000001),java.nio.charset.StandardCharsets.UTF_8);

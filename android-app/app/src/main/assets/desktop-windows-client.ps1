@@ -5,7 +5,21 @@ $sharedRoot = Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.Wi
 if (Test-Path -LiteralPath "$sharedRoot\status.json") { $root=$sharedRoot }
 function Read-Broker {
     if (!(Test-Path -LiteralPath "$root\status.json")) { throw 'Windows 桌面桥接未运行。请在已登录的 Windows 桌面启动 Agent Control Bridge，然后在手机重新连接。' }
-    $s = [IO.File]::ReadAllText("$root\status.json",$utf8) | ConvertFrom-Json
+    $s=$null
+    for($attempt=0;$attempt -lt 8;$attempt++) {
+        $statusStream=$null;$statusReader=$null
+        try {
+            $statusStream=[IO.File]::Open("$root\status.json",[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            $statusReader=[IO.StreamReader]::new($statusStream,$utf8)
+            $s=$statusReader.ReadToEnd() | ConvertFrom-Json
+            break
+        } catch {
+            if($attempt -eq 7){throw}
+            Start-Sleep -Milliseconds 75
+        } finally {
+            if($statusReader){$statusReader.Dispose()}elseif($statusStream){$statusStream.Dispose()}
+        }
+    }
     if ($s.protocol -ne 1 -or $s.userSid -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or
         ([DateTime]::UtcNow - [DateTime]::Parse($s.updatedUtc).ToUniversalTime()).TotalSeconds -gt 15) { throw '桌面桥接已离线或不属于当前 SSH 用户。' }
     if (!$s.ready) { throw ('Windows 桌面不可用：' + $s.reason + '。请登录并解锁对应桌面；云电脑需要保持可交互的用户会话。') }
@@ -42,7 +56,7 @@ try {
                 if ($line.Length -gt 262144) { throw '桌面事件过大，状态未知' }
                 $event = $line | ConvertFrom-Json
                 [Console]::WriteLine($line)
-                if ($event.type -eq 'desktop.done' -or $event.type -eq 'error') { return }
+                if ($event.type -eq 'desktop.done' -or $event.type -eq 'desktop.cancelled' -or $event.type -eq 'error') { return }
             }
         }
         # Do not replay on a broker restart, lost session or broken transport.

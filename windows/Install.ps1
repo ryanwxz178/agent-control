@@ -16,7 +16,18 @@ Set-Acl -LiteralPath $root -AclObject $acl
 Set-Acl -LiteralPath $bridge -AclObject $acl
 Set-Acl -LiteralPath $bin -AclObject $acl
 foreach ($file in @('Bridge.ps1','Desktop.ps1','UiLogic.ps1','Protocol.ps1','Diagnose.ps1','profiles.json')) {
-    if ($file -eq 'profiles.json' -and (Test-Path -LiteralPath "$bin\$file")) { continue }
+    if ($file -eq 'profiles.json' -and (Test-Path -LiteralPath "$bin\$file")) {
+        $existing=Get-Content -LiteralPath "$bin\$file" -Raw -Encoding UTF8 | ConvertFrom-Json
+        $defaults=Get-Content -LiteralPath "$PSScriptRoot\$file" -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach($adapter in $defaults.PSObject.Properties){
+            if(!$existing.PSObject.Properties[$adapter.Name]){$existing|Add-Member -NotePropertyName $adapter.Name -NotePropertyValue $adapter.Value;continue}
+            foreach($setting in $adapter.Value.PSObject.Properties){
+                if(!$existing.($adapter.Name).PSObject.Properties[$setting.Name]){$existing.($adapter.Name)|Add-Member -NotePropertyName $setting.Name -NotePropertyValue $setting.Value}
+            }
+        }
+        [IO.File]::WriteAllText("$bin\$file",($existing|ConvertTo-Json -Depth 10),[Text.UTF8Encoding]::new($false))
+        continue
+    }
     Copy-Item -LiteralPath "$PSScriptRoot\$file" -Destination "$bin\$file" -Force
 }
 $exe="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"

@@ -16,7 +16,7 @@ public final class Agent {
     public boolean bundledWorkBuddy(){return id.equals("workbuddy")&&kind.equals("buddy")&&command.size()==2&&command.get(1).replace('\\','/').endsWith("/app.asar.unpacked/cli/bin/codebuddy");}
     public JSONObject json() throws JSONException {
         return new JSONObject().put("id",id).put("name",name).put("kind",kind).put("installed",installed)
-            .put("supported",supported()).put("detail",!supported()?"已安装 · 手机控制尚未适配":desktop()?"桌面会话 · 需解锁及桌面桥接权限":kind.equals("dsh")?"CLI · DSH ACP · 内置 CLI 沿用桌面模型":kind.equals("buddy")?(bundledWorkBuddy()?"CLI · 桌面托管 · 需 WorkBuddy 已登录并运行":"CLI · CodeBuddy ACP · 需 CLI 登录"):"CLI · 使用电脑已配置的登录");
+            .put("supported",supported()).put("detail",!supported()?"已安装 · 手机控制尚未适配":desktop()?"桌面会话 · 需解锁及桌面桥接权限":kind.equals("teleagent")?"CLI · 独立后台 · 使用当前 Windows 用户的 TeleAgent 登录":kind.equals("dsh")?"CLI · DSH ACP · 内置 CLI 沿用桌面模型":kind.equals("buddy")?(bundledWorkBuddy()?"CLI · 桌面托管 · 需 WorkBuddy 已登录并运行":"CLI · CodeBuddy ACP · 需 CLI 登录"):"CLI · 使用电脑已配置的登录");
     }
     public static String quote(String s) {
         if(s.indexOf('\0')>=0) throw new IllegalArgumentException("不支持 NUL 字符");

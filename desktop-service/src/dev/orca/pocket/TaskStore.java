@@ -73,7 +73,7 @@ final class TaskStore {
             next.put(e);
         }
         if(next.length()>350)throw new IOException("任务事件过多，停止执行以保留可恢复记录");
-        long seq=task.optLong("seq")+1;next.put(new JSONObject().put("seq",seq).put("type",type).put("data",copy(data)));
+        long seq=task.optLong("seq")+1;next.put(new JSONObject().put("seq",seq).put("type",type).put("createdAt",System.currentTimeMillis()).put("data",copy(data)));
         task.put("events",next).put("seq",seq);save(task);
     }
     synchronized JSONArray snapshot(){

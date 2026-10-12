@@ -15,12 +15,13 @@ try { $lock=[IO.File]::Open("$Root\broker.lock",[IO.FileMode]::OpenOrCreate,[IO.
 catch { throw 'Another desktop bridge is already running for this user. Stop it before switching sessions.' }
 function Find-Apps {
     $paths=@{}
+    $session=[Diagnostics.Process]::GetCurrentProcess().SessionId
     if (Test-Path -LiteralPath "$PSScriptRoot\apps.json") { $paths=Get-Content -LiteralPath "$PSScriptRoot\apps.json" -Raw -Encoding UTF8 | ConvertFrom-Json }
     $found=@()
     foreach ($property in $profiles.PSObject.Properties) {
         $id=$property.Name; $Adapter=$property.Value; $candidates=@()
         if ($paths.$id) { $candidates+= $paths.$id }
-        $candidates+= @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq [Diagnostics.Process]::GetCurrentProcess().SessionId -and $_.ProcessName -in $Adapter.processNames } | ForEach-Object { $_.Path })
+        $candidates+= @(Get-Process -Name $Adapter.processNames -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $session } | ForEach-Object { $_.Path })
         foreach ($name in $Adapter.processNames) {
             foreach ($base in @($env:LOCALAPPDATA,"$env:LOCALAPPDATA\Programs",$env:ProgramFiles,${env:ProgramFiles(x86)})) {
                 if ($base) { $candidates+= "$base\$name\$name.exe" }
@@ -47,11 +48,11 @@ function Save-Status {
         } catch [IO.IOException] { if ($attempt -eq 4) { throw }; Start-Sleep -Milliseconds 50 }
     }
 }
-function Pulse {
+function Pulse([switch]$Ending) {
     Save-Status
     if ($script:activeId) {
         $lease="$Root\$script:activeId.lease"
-        if ((Test-Path -LiteralPath "$Root\$script:activeId.cancel") -or !(Test-Path -LiteralPath $lease) -or ([DateTime]::UtcNow-[IO.File]::GetLastWriteTimeUtc($lease)).TotalSeconds -gt 15) { throw '手机连接已中断或取消，停止桌面操作；已发送的电脑任务可能仍在运行' }
+        if ((!$Ending -and (Test-Path -LiteralPath "$Root\$script:activeId.cancel")) -or !(Test-Path -LiteralPath $lease) -or ([DateTime]::UtcNow-[IO.File]::GetLastWriteTimeUtc($lease)).TotalSeconds -gt 15) { throw '手机连接已中断或取消，停止桌面操作；已发送的电脑任务可能仍在运行' }
         $reason=Get-DesktopHealth
         if ($reason) { throw $reason }
     }
@@ -77,7 +78,8 @@ try {
                 $app=@($apps | Where-Object { $_.id -eq $r.app })
                 if ($app.Count -ne 1 -or !$profiles.($r.app)) { throw '未知或未安装的桌面应用' }
                 Pulse
-                Invoke-DesktopChat $app[0] $profiles.($r.app) $r.prompt $r.conversationId
+                if($r.operation -eq 'endConversation'){Invoke-EndDesktopConversation $app[0] $profiles.($r.app) $r.conversationId}
+                else{Invoke-DesktopChat $app[0] $profiles.($r.app) $r.prompt $r.conversationId}
             } catch { Write-Event 'error' $_.Exception.Message }
             finally {
                 $events.Dispose(); $events=$null

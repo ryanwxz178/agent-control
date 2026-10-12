@@ -4,6 +4,9 @@ import org.json.*;
 import java.util.*;
 
 public final class EventDecoder {
+    public static final class DesktopEnded extends java.util.concurrent.CancellationException {
+        DesktopEnded(){super("原桌面会话已确认结束");}
+    }
     public interface Sink { void update(String text,String status); }
     private final Sink sink;
     public interface Extra { void accept(JSONObject event)throws Exception; }
@@ -23,6 +26,7 @@ public final class EventDecoder {
         try{j=new JSONObject(line);}catch(JSONException e){return;}
         extra.accept(j);
         String type=j.optString("type");
+        if(type.equals("desktop.cancelled"))throw new DesktopEnded();
         if(type.equals("stream_event")||type.equals("tool")||type.equals("tool_result")||type.startsWith("item."))workStarted=true;
         if(type.equals("item.completed")||type.equals("item.updated")){
             JSONObject item=j.optJSONObject("item");

@@ -1,6 +1,8 @@
 # 本机 Android 与 Windows 接入
 
-本次产物：`dist/Agent-Control-0.5.21.apk`，Android 8.0 及以上。该修复版延用上一版本机签名，可覆盖本次提供的旧版并保留手机配置。若手机已装其他签名的同包名应用，需要先备份手机应用内配置，再自行卸载旧版后安装。本地签名材料位于 `android-app/.signing`，不提交或分享。
+本次产物：`dist/Agent-Control-0.5.22.apk`，Android 8.0 及以上。该修复版延用上一版本机签名，可覆盖本次提供的旧版并保留手机配置。若手机已装其他签名的同包名应用，需要先备份手机应用内配置，再自行卸载旧版后安装。本地签名材料位于 `android-app/.signing`，不提交或分享。
+
+0.5.22 新增 Windows TeleAgent 的 HTTP 后台 CLI 包装。本机 TeleAgent 2.7.0 / 后台 1.2.27 已取得真实模型回复 **47 × 89 = 4183**，生产 PocketEngine → JSch SSH/SFTP 也已取得 **53 × 97 = 5141**，标准输入输出返回回复与完成事件，无 GUI 操作或桌面回退。需当前 SSH 登录的 Windows 用户已经登录 TeleAgent；每次使用独立临时数据库与后台，不接管桌面会话。权限问答已有离线测试，实体 Android 尚未验收。详见 [当前 CLI 支持与验证范围](CLI-SUPPORT.md)。
 
 0.5.21 补上 Windows WorkBuddy、DeepSeek Harness 的托管 CLI 启动和 ACP 回复回传，修正 Claude npm 入口；详见 [CLI 检查与验证](AGENT-CLI-AUDIT.md)。修复电脑任务脚本重复 BOM 和手机失败任务不显示原因的问题。安装此版本后断开并重连以刷新 Agent 列表。WorkBuddy CLI 仍需电脑桌面应用保持已登录和运行。
 
@@ -17,8 +19,9 @@
 - 安装 JDK 17、Android SDK Platform 35、Build Tools 35.0.0，并校验下载文件摘要。
 - 安装浏览器 worker 的 Node 依赖并通过 TypeScript 检查。可选 Chromium 下载和 worker 启动没有执行。
 - APK 完成 v2/v3 签名验证、zipalign 验证；Windows 桥接逻辑、Java 交互与会话测试、指定 Node 回归测试通过。
-- 原项目包含 WorkBuddy、豆包 Windows 桌面适配。本机 WorkBuddy 当前没有暴露聊天控件，尚未验证实际收发。
-- 新增 TeleAgent 2.7.0 Windows 控件配置，依据本机只读控件树识别新任务、输入框、运行、完成标题和复制工具栏。回复边界、时间戳排除、生成中拒绝完成等测试通过。真实点击遇到 `GetCursorPos failed: 拒绝访问 (0x80070005)`，未发送模型测试消息，因此该适配仍需端到端验收。
+- 0.5.21 Windows WorkBuddy 托管 ACP 与 DSH ACP 已整合；使用与手机相同的 Java SSH/SFTP 实现均取得真实 `WINDOWS_CLI_OK` 和 `end_turn`。WorkBuddy 桌面控件接入当时未验证，但当前 CLI 路径不依赖聊天控件。
+- 0.5.22 TeleAgent Windows 后台 CLI 已通过本机真实文本对话和退出清理，18 项离线 HTTP / CLI 生命周期回归通过；生产 PocketEngine → JSch SSH/SFTP 真实回复通过，无桌面回退，Java 测试退出码 0，engine busy 释放。证据见 [SSH 验证记录](../android-app/test-output/teleagent-cli-ssh-verified.json)；手机权限与问答没有实体 Android 验收。
+- 2026-10-12 早期 TeleAgent 2.7.0 Windows 桌面控件检查识别了新任务、输入框、运行、完成标题和复制工具栏；回复边界、时间戳排除、生成中拒绝完成等测试通过。该桌面路径真实点击遇到 `GetCursorPos failed: 拒绝访问 (0x80070005)`，当时未发送模型消息，仍需单独验收；不影响本轮无 GUI 的后台 CLI 验证结论。
 - 修复 Windows 请求未传递手机 conversationId 的问题，保留同一手机对话的电脑会话绑定。
 - ChatGPT 桌面应用未接入，不能宣称可控制。已发现的 `ChatGPT.exe` 属于 OpenAI Codex 安装包，不应当识别为独立 ChatGPT 应用。Codex CLI 是项目已有的另一条路径。
 - 未连接 Android 实机，未验证手机到电脑的真实收发。2026-10-12 后续安装已完成：Windows 可选组件安装报错 `0x800f0950` 后，改用微软 Win32-OpenSSH 10.0.0.0p2-Preview；安装包 SHA-256 与微软签名均验证通过。sshd 已运行并设置自动启动，22 端口监听及本机 SSH 握手已验证，入站防火墙仅允许 `192.168.43.0/24`。SFTP 子系统已配置为服务安装目录下的绝对路径。
@@ -35,7 +38,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\dev\agent-control\win
 
 本机当前 WLAN 地址为 `192.168.43.5/24`。上面的网段仅用于手机也位于该可信局域网的情况；使用 VPN 或更换网络时改为实际可信来源地址。安装脚本会显示 SSH 主机指纹，请在手机连接时核对。不要在聊天中发送登录密码或私钥。
 
-本机桥接已在普通权限的用户会话中启动，状态 `ready=true`、`busy=false`，已发现 WorkBuddy、豆包、TeleAgent、DeepSeek Harness。当前后台运行，无需重复启动。重启或注销后，从**普通权限、已登录且已解锁的桌面**运行 `windows/Start-Bridge.cmd`，并保持桥接和桌面会话运行。不要在管理员会话启动桌面桥接，避免与普通权限应用不匹配。安装目录为 `%ProgramData%\AgentControl\<当前用户 SID>\bin`。本次修改登录启动项的组合命令被自动审批拒绝，因此新共享目录的自动启动尚未配置。
+本机桌面桥接已在普通权限的用户会话中启动，状态 `ready=true`、`busy=false`，已发现 WorkBuddy、豆包、TeleAgent、DeepSeek Harness。当前后台运行，无需重复启动。重启或注销后，桌面模式从**普通权限、已登录且已解锁的桌面**运行 `windows/Start-Bridge.cmd`，并保持桥接和桌面会话运行。不要在管理员会话启动桌面桥接，避免与普通权限应用不匹配。安装目录为 `%ProgramData%\AgentControl\<当前用户 SID>\bin`。此前修改登录启动项的组合命令被自动审批拒绝，因此新共享目录的自动启动尚未配置。
+
+TeleAgent 的“仅 CLI”通过 SSH 启动临时后台，不依赖桌面辅助功能或鼠标控件。当前 SSH Windows 用户必须拥有有效的 TeleAgent 登录；受 Windows 保护的登录状态仅在进程内解密并经 stdin 初始化后台，明文不落盘。客户端请求全部访问 `127.0.0.1`，但后台监听 wildcard 地址；会话、消息等业务接口使用强制随机 HMAC 签名和 Basic 认证，不向手机提供后台端口或密钥。退出只终止自己的会话和后台并清理临时数据库。WorkBuddy CLI 仍需桌面保持登录、运行。
 
 本机 SSH 主机指纹（安装生成，2026-10-12）：
 
@@ -61,10 +66,12 @@ Start-Process -FilePath 'C:\Users\steam\AppData\Local\Doubao\Application\app\Dou
 1. 安装 APK，手机与电脑连接同一个可信局域网或可达 VPN。
 2. 电脑地址：当前 `192.168.43.5`；端口：`22`；用户：`steam`；工作目录：`D:\dev\agent-control`。
 3. 使用该 Windows 账号的已有 SSH 私钥或真实账号密码登录。Windows Hello PIN 不等于 SSH 密码。
-4. 核对 SSH 主机指纹，WorkBuddy、DeepSeek Harness、Codex、Claude 可选择“仅 CLI”；TeleAgent、豆包选择“直接桌面”。连接后选择目标 Agent。
+4. 核对 SSH 主机指纹，WorkBuddy、DeepSeek Harness、Codex、Claude、Windows TeleAgent 可选择“仅 CLI”；豆包选择“直接桌面”。TeleAgent 需该 SSH Windows 用户已登录桌面账号，WorkBuddy 桌面需保持运行。安装后断开并重连以刷新 Agent 列表，再选择目标 Agent。
 5. 分别发送无副作用的短回复测试，检查电脑收到完整消息、手机收到真实回复并显示完成。先分别测试各应用，再测试第二条消息继续同一电脑对话。
 
-Windows 桌面适配目前只承诺其实现的文本协议；macOS 的图片、附件、确认卡片能力不能直接视为 Windows 已支持。遇到应用需要批准权限或回答问题时，先在电脑完成，并核对状态。
+Windows 桌面适配目前只承诺其实现的文本协议；macOS 的图片、附件、确认卡片能力不能直接视为 Windows 已支持。桌面模式遇到应用需要批准权限或回答问题时，先在电脑完成并核对状态。
+
+TeleAgent 后台 CLI 已实现手机权限与问答返回：未开启“允许写入”时拒绝写入和命令，开启后对写入及 PowerShell 命令由手机选择一次允许或拒绝；Bash 与工作目录外操作仍拒绝。问答可选择选项、多选或输入自由文本。这些协议有离线回归覆盖，实体 Android 的确认卡片与实际点击尚未验收。该临时后台不继承原桌面会话历史、技能和全局记忆；图片、文件以及真实模型权限交互仍需端到端验证。
 
 ## 本机重新构建
 
@@ -74,4 +81,17 @@ pwsh -NoProfile -File windows/Build-Android.ps1 -Test
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File android-app/tests/windows/Test-Logic.ps1
 ```
 
-Windows 构建脚本使用 PowerShell 7。CoreTest 包含硬编码 `/bin/zsh` 探测，在 Windows 上未运行；`-Test` 运行 WindowsTransportTest、InteractionTest、DesktopContinuityTest。
+Windows 构建脚本使用 PowerShell 7。CoreTest 包含硬编码 `/bin/zsh` 探测，在 Windows 上未运行；`-Test` 运行 WindowsTransportTest、InteractionTest、DesktopContinuityTest 和 TeleAgentSessionTest，并回放真实 TeleAgent 回复的脱敏 fixture。
+
+## 0.5.23 本机 Android 链路验收（2026-10-12）
+
+已安装官方 Android SDK Emulator 与 API 35 x86_64 系统镜像，AVD 为 `AgentControlTest`。在正式签名 APK 内通过真实 SSH 私钥连接 `10.0.2.2:22`，没有替换网络或 Agent 返回值。
+
+- TeleAgent CLI：手机收到中文答案 `53 × 97 = 5141` 并完成。
+- WorkBuddy CLI：手机收到中文答案 `47 × 89 = 4183` 并完成。
+- WorkBuddy 桌面：实际点击原生输入、发送并读取答案，手机收到 `43 × 79 = 3397` 与唯一测试标记并完成。
+- 运行中的 WorkBuddy 桌面任务：手机点新对话，电脑停止原任务、保存 `ended`，随后手机创建新会话。
+- 运行中的 TeleAgent CLI：手机点新对话，原任务取消并确认本地进程退出，随后创建新会话。
+- 消息与回复均显示秒级时间；中文标签没有乱码。截图保存于 `android-app/test-output/emulator/`。
+
+本机桥接代码已更新；其他电脑也需要更新 Windows 桥接并重启。安装脚本为既有 profiles 添加缺失配置，保留已有自定义值。上述验收限于三个列出的文本接入路径，其他 Agent、图片及真实审批场景仍须分别验收。

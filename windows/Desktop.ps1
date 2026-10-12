@@ -21,6 +21,16 @@ public static class PocketDesktop {
  }
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+ [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+ [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from,uint to,bool attach);
+ public static bool Activate(IntPtr hwnd) {
+  if(GetForegroundWindow()==hwnd)return true;
+  uint processId;uint current=GetCurrentThreadId();
+  uint foreground=GetWindowThreadProcessId(GetForegroundWindow(),out processId);
+  bool attached=foreground!=0&&foreground!=current&&AttachThreadInput(current,foreground,true);
+  try { ShowWindow(hwnd,9);SetForegroundWindow(hwnd);return GetForegroundWindow()==hwnd; }
+  finally { if(attached)AttachThreadInput(current,foreground,false); }
+ }
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd,int cmd);
  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
@@ -72,21 +82,21 @@ function Get-UiSnapshot($Window) {
     Visit $Window -1 0
     return $list.ToArray()
 }
-function Assert-Window($Window) {
-    Pulse
+function Assert-Window($Window,[switch]$Ending) {
+    Pulse -Ending:$Ending
     $reason = Get-DesktopHealth
     if ($reason) { throw $reason }
     if ([PocketDesktop]::GetForegroundWindow() -ne [IntPtr]$Window.Current.NativeWindowHandle) { throw '目标窗口失去前台焦点，已停止输入。请勿同时操作电脑。' }
 }
-function Invoke-UiButton($Node,$Window) {
-    Assert-Window $Window
+function Invoke-UiButton($Node,$Window,[switch]$Ending) {
+    Assert-Window $Window -Ending:$Ending
     if (!$Node.enabled -or $Node.offscreen) { throw '按钮不可用，未点击' }
     $pattern=$null
     if ($Node.raw.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)) { $pattern.Invoke(); return }
     if ($Node.raw.TryGetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)) { $pattern.Select(); return }
     $point=[Windows.Point]::new()
     if (!$Node.raw.TryGetClickablePoint([ref]$point)) { throw '无法获得按钮的可点击位置，未操作' }
-    Assert-Window $Window
+    Assert-Window $Window -Ending:$Ending
     if (![PocketDesktop]::SetCursorPos([int]$point.X,[int]$point.Y)) { throw '无法定位鼠标，未操作' }
     [PocketDesktop]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
     [PocketDesktop]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
@@ -109,8 +119,7 @@ function Get-AppWindow($App,$Adapter) {
     }
     if ($handles.Count -ne 1) { throw '无法唯一识别当前用户会话中的应用主窗口，请关闭额外窗口或手动启动应用。' }
     $hwnd=[IntPtr]$handles[0]
-    [PocketDesktop]::ShowWindow($hwnd,9) | Out-Null
-    [PocketDesktop]::SetForegroundWindow($hwnd) | Out-Null
+    if (![PocketDesktop]::Activate($hwnd)) { throw '无法将目标应用切到前台，请先在电脑打开该应用后重试。' }
     Start-Sleep -Milliseconds 500
     return [Windows.Automation.AutomationElement]::FromHandle($hwnd)
 }
@@ -123,7 +132,28 @@ function Save-DesktopConversation($Path,$State) {
     [IO.Directory]::CreateDirectory($folder) | Out-Null
     $temporary=$Path+'.tmp'
     [IO.File]::WriteAllText($temporary,($State|ConvertTo-Json -Depth 8 -Compress),[Text.UTF8Encoding]::new($false))
-    if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temporary,$Path,$null) } else { [IO.File]::Move($temporary,$Path) }
+    if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temporary,$Path,$Path+'.previous') } else { [IO.File]::Move($temporary,$Path) }
+}
+function Invoke-EndDesktopConversation($App,$Adapter,[string]$ConversationId) {
+    if($ConversationId -notmatch '^[a-zA-Z0-9_-]{1,160}$'){throw '手机会话标识无效'}
+    $path=Join-Path $env:USERPROFILE ('.agent-control/desktop-conversations/'+$App.id+'-'+$ConversationId+'.json')
+    $previous=[IO.File]::ReadAllText($path,[Text.Encoding]::UTF8)|ConvertFrom-Json
+    if($previous.app -cne $App.id -or $previous.conversationId -cne $ConversationId -or !$previous.prompt){throw '原桌面会话绑定无效'}
+    $window=Get-AppWindow $App $Adapter
+    Assert-Window $window -Ending
+    $nodes=@(Get-UiSnapshot $window);$chat=Get-ChatScope $nodes $Adapter
+    if(!(Get-ReplyState $nodes $Adapter $previous.prompt).sent){throw '请在电脑打开原会话后重试结束，不会停止其他任务'}
+    $stops=@($chat.nodes | Where-Object { $_.role -eq 'Button' -and $_.name -match $Adapter.busy -and $_.enabled -and !$_.offscreen })
+    if($stops.Count -gt 1){throw '停止按钮不唯一，未操作电脑'}
+    if($stops.Count -eq 1){Invoke-UiButton $stops[0] $window -Ending}
+    for($attempt=0;$attempt -lt 20;$attempt++){
+        Assert-Window $window -Ending
+        $nodes=@(Get-UiSnapshot $window);$reply=Get-ReplyState $nodes $Adapter $previous.prompt
+        if(!$reply.sent){throw '原会话身份已改变，不能确认结束'}
+        if(!$reply.busy){$previous.status='ended';Save-DesktopConversation $path $previous;Write-Event 'desktop.cancelled' '原桌面会话已结束';return}
+        Start-Sleep -Milliseconds 250
+    }
+    throw '原桌面任务尚未确认停止，请先在电脑结束任务'
 }
 function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationId) {
     $window=Get-AppWindow $App $Adapter
@@ -182,9 +212,11 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
         [Windows.Forms.SendKeys]::SendWait('^v')
         Start-Sleep -Milliseconds 500
     } finally {
-        if ([Windows.Forms.Clipboard]::ContainsText() -and [Windows.Forms.Clipboard]::GetText() -eq $Prompt) {
-            if ($saved) { [Windows.Forms.Clipboard]::SetDataObject($saved,$true) } else { [Windows.Forms.Clipboard]::Clear() }
-        }
+        try {
+            if ([Windows.Forms.Clipboard]::ContainsText() -and [Windows.Forms.Clipboard]::GetText() -eq $Prompt) {
+                if ($saved) { [Windows.Forms.Clipboard]::SetDataObject($saved,$true) } else { [Windows.Forms.Clipboard]::Clear() }
+            }
+        } catch { Write-Event 'status' '剪贴板被其他程序占用，正在核对电脑输入框' }
     }
     $nodes=@(Get-UiSnapshot $window); $chat=Get-ChatScope $nodes $Adapter
     if (((Get-EditorValue $chat.editor $Adapter) -replace "`r`n","`n").TrimEnd("`r","`n") -cne ($Prompt -replace "`r`n","`n").TrimEnd("`r","`n")) { throw '输入框内容回读不一致，未发送' }
@@ -198,6 +230,25 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
     Write-Event 'status' '正在确认消息已进入电脑对话'
     $started=[DateTime]::UtcNow; $confirmed=$false; $last=''; $stable=0; $editorIdentity=$null
     while (([DateTime]::UtcNow-$started).TotalSeconds -lt 600) {
+        if(Test-Path -LiteralPath "$Root\$script:activeId.cancel") {
+            Assert-Window $window -Ending
+            $cancelNodes=@(Get-UiSnapshot $window);$cancelChat=Get-ChatScope $cancelNodes $Adapter
+            $cancelState=Get-ReplyState $cancelNodes $Adapter $Prompt
+            if(!$cancelState.sent){throw '无法确认原桌面对话，未停止其他任务'}
+            $stopButtons=@($cancelChat.nodes | Where-Object { $_.role -eq 'Button' -and $_.name -match $Adapter.busy -and $_.enabled -and !$_.offscreen })
+            if($stopButtons.Count -gt 1){throw '停止按钮不唯一，未操作电脑'}
+            if($stopButtons.Count -eq 1){Invoke-UiButton $stopButtons[0] $window -Ending}
+            for($stopAttempt=0;$stopAttempt -lt 40;$stopAttempt++) {
+                Start-Sleep -Milliseconds 250;Assert-Window $window -Ending
+                $cancelNodes=@(Get-UiSnapshot $window);$cancelChat=Get-ChatScope $cancelNodes $Adapter
+                if(!(Get-ReplyState $cancelNodes $Adapter $Prompt).sent){throw '电脑已切换对话，无法确认原任务结束'}
+                if(!@($cancelChat.nodes | Where-Object { $_.role -eq 'Button' -and $_.name -match $Adapter.busy }).Count) {
+                    $conversationState.status='ended';Save-DesktopConversation $conversationPath $conversationState
+                    Write-Event 'desktop.cancelled' '原桌面会话已结束';return
+                }
+            }
+            throw '原桌面任务尚未确认停止，请先在电脑结束任务'
+        }
         Pulse; Start-Sleep -Milliseconds 500
         $currentNodes=@(Get-UiSnapshot $window)
         $currentChat=Get-ChatScope $currentNodes $Adapter

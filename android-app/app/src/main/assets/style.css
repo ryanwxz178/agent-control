@@ -17,6 +17,7 @@ dialog{border:1px solid var(--line);border-bottom:0;border-radius:28px 28px 0 0;
 @media(max-height:620px){#welcome{padding-top:18px}.welcome-symbol{display:none}h1{font-size:25px}#welcomeText{margin-bottom:14px}.suggestions button{min-height:60px;padding-block:10px}header{height:60px}.toolbar{padding-bottom:8px}#footerHint{display:none}dialog{max-height:96dvh}.sheet-head{padding-block:14px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 
+.message-time{display:block;margin-top:8px;color:var(--secondary);font-size:11px;line-height:1.6;font-variant-numeric:tabular-nums}.message.user .message-time{text-align:right}
 .switch-target{margin:0;display:flex;align-items:center;justify-content:center;width:48px;min-height:48px;flex-shrink:0}.switch-target input{padding:0}.agent-option .check .icon{width:20px;height:20px}
 /* Task-bound confirmation and attachment surfaces use the existing palette and rhythm. */
 .interaction{margin:16px 0;padding:16px;border:1px solid var(--accent);border-radius:14px;background:var(--accent-soft)}

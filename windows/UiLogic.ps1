@@ -53,6 +53,10 @@ function Get-ChatScope($Nodes, $Adapter) {
         $scopes = @($Nodes | Where-Object { $_.automationId -eq $Adapter.chatId })
         if ($scopes.Count -ne 1 -or !(Test-Descendant $editor $scopes[0].index $Nodes)) { throw '配置的聊天区域与输入框不匹配。' }
         $scope = $scopes[0]
+    } elseif ($Adapter.chatEditorParent) {
+        if($editor.parent -lt 0 -or $editor.parent -ge $Nodes.Count){throw '聊天输入框的父区域无效'}
+        $scope=$Nodes[$editor.parent]
+        if(!@($Nodes | Where-Object { (Test-Descendant $_ $scope.index $Nodes) -and $_.role -eq 'Button' -and ($_.name -match $Adapter.send -or $_.name -match $Adapter.busy) }).Count){throw '聊天输入框与发送控件不在同一区域'}
     } else {
         [int]$at = $editor.parent; $scope = $null; $hops=0
         while ($at -ge 0) {
@@ -70,7 +74,8 @@ function Get-ReplyState($Nodes, $Adapter, [string]$Prompt) {
     $busy = @($items | Where-Object { $_.role -eq 'Button' -and $_.name -match $Adapter.busy }).Count -gt 0
     $key = Normalize-Message $Prompt
     # Match complete user text, including split UIA text runs, outside the editor.
-    $textNodes = @($items | Where-Object { $_.role -eq 'Text' -and $_.name })
+    $messageCopies=@($items | Where-Object { $_.role -eq 'Button' -and ($_.name -match '^(复制|Copy)$' -or (Test-AdapterButton $_ $Adapter.replyEndName $Adapter.replyEndClass)) })
+    $textNodes = @($items | Where-Object { $_.role -eq 'Text' -and (Normalize-Message $_.name) -and (Test-MessageText $_ $Nodes $Adapter $chat.scope.index $messageCopies) })
     $start = -1; $end = -1; $matches=0
     for ($i=0; $i -lt $textNodes.Count; $i++) {
         $joined = ''
@@ -101,4 +106,14 @@ function Get-ReplyState($Nodes, $Adapter, [string]$Prompt) {
     }
     $reply = @($textNodes | Where-Object { $_.index -gt $end -and $_.index -lt $boundary -and !(Test-ReplyDecoration $_ $Nodes $Adapter) } | ForEach-Object { $_.name }) -join "`n"
     return @{ sent=$true; complete=(!$busy -and ![string]::IsNullOrWhiteSpace($reply)); text=$reply; busy=$busy }
+}
+function Test-MessageText($Node,$Nodes,$Adapter,[int]$Scope,$Copies) {
+    if(!$Adapter.messageCopyScope){return $true}
+    [int]$at=$Node.parent;$hops=0
+    while($at -ge 0 -and $at -ne $Scope){
+        if(++$hops -gt $Nodes.Count -or $at -ge $Nodes.Count){throw '消息区域父节点链无效'}
+        foreach($copy in $Copies){if(Test-Descendant $copy $at $Nodes){return $true}}
+        $at=$Nodes[$at].parent
+    }
+    return $false
 }
