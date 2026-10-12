@@ -13,9 +13,10 @@ public final class Agent {
     }
     public boolean supported() { return !kind.equals("detected"); }
     public boolean desktop() { return kind.equals("desktop"); }
+    public boolean bundledWorkBuddy(){return id.equals("workbuddy")&&kind.equals("buddy")&&command.size()==2&&command.get(1).replace('\\','/').endsWith("/app.asar.unpacked/cli/bin/codebuddy");}
     public JSONObject json() throws JSONException {
         return new JSONObject().put("id",id).put("name",name).put("kind",kind).put("installed",installed)
-            .put("supported",supported()).put("detail",!supported()?"已安装 · 手机控制尚未适配":desktop()?"桌面会话 · 需解锁及桌面桥接权限":kind.equals("dsh")?"CLI · DSH ACP · 内置 CLI 沿用桌面模型":kind.equals("buddy")?(id.equals("workbuddy")&&command.size()==2&&command.get(1).endsWith("/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy")?"CLI · 桌面托管 · 需 WorkBuddy 已登录并运行":"CLI · CodeBuddy ACP · 需 CLI 登录"):"CLI · 使用电脑已配置的登录");
+            .put("supported",supported()).put("detail",!supported()?"已安装 · 手机控制尚未适配":desktop()?"桌面会话 · 需解锁及桌面桥接权限":kind.equals("dsh")?"CLI · DSH ACP · 内置 CLI 沿用桌面模型":kind.equals("buddy")?(bundledWorkBuddy()?"CLI · 桌面托管 · 需 WorkBuddy 已登录并运行":"CLI · CodeBuddy ACP · 需 CLI 登录"):"CLI · 使用电脑已配置的登录");
     }
     public static String quote(String s) {
         if(s.indexOf('\0')>=0) throw new IllegalArgumentException("不支持 NUL 字符");
@@ -68,6 +69,10 @@ public final class Agent {
         return "$inputFile=$PSCommandPath+'.stdin'; try { [IO.File]::WriteAllBytes($inputFile,[Convert]::FromBase64String('"+data+"')); "+
             "$child=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','"+encoded+"') "+
             "-RedirectStandardInput $inputFile -NoNewWindow -Wait -PassThru; $code=$child.ExitCode } finally { [IO.File]::Delete($inputFile) }; exit $code";
+    }
+    public static String windowsNodeScript(String runtime,String source,boolean electron){
+        // Windows PowerShell otherwise detaches GUI-subsystem Electron executables.
+        return "$jsFile=$PSCommandPath+'.js'; [IO.File]::WriteAllText($jsFile,"+psQuote(source)+",[Text.UTF8Encoding]::new($false)); try { "+(electron?"$env:ELECTRON_RUN_AS_NODE='1'; ":"")+"& "+psQuote(runtime)+(electron?" --expose-internals":"")+" $jsFile"+(electron?" | ForEach-Object { [Console]::WriteLine($_) }":"")+"; if($null -ne $LASTEXITCODE){exit $LASTEXITCODE} } finally { [IO.File]::Delete($jsFile) }";
     }
     public static boolean absoluteDirectory(String directory,String os) {
         if(directory.indexOf('\0')>=0||directory.indexOf('\n')>=0||directory.indexOf('\r')>=0)return false;

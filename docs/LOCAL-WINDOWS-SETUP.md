@@ -1,6 +1,8 @@
 # 本机 Android 与 Windows 接入
 
-本次产物：`dist/Agent-Control-0.5.20.apk`，Android 8.0 及以上。该修复版延用上一版本机签名，可覆盖本次提供的旧版并保留手机配置。若手机已装其他签名的同包名应用，需要先备份手机应用内配置，再自行卸载旧版后安装。本地签名材料位于 `android-app/.signing`，不提交或分享。
+本次产物：`dist/Agent-Control-0.5.21.apk`，Android 8.0 及以上。该修复版延用上一版本机签名，可覆盖本次提供的旧版并保留手机配置。若手机已装其他签名的同包名应用，需要先备份手机应用内配置，再自行卸载旧版后安装。本地签名材料位于 `android-app/.signing`，不提交或分享。
+
+0.5.21 补上 Windows WorkBuddy、DeepSeek Harness 的托管 CLI 启动和 ACP 回复回传，修正 Claude npm 入口；详见 [CLI 检查与验证](AGENT-CLI-AUDIT.md)。修复电脑任务脚本重复 BOM 和手机失败任务不显示原因的问题。安装此版本后断开并重连以刷新 Agent 列表。WorkBuddy CLI 仍需电脑桌面应用保持已登录和运行。
 
 0.5.20 将 Windows 桥接安装与队列迁至 `%ProgramData%\AgentControl\<当前用户 SID>`，目录 ACL 仅允许该用户和 SYSTEM，确保本机桌面和 SSH 会话能读取同一队列；客户端保留旧目录回退。通过真实 SSH 和 App 使用的 SFTP 脚本传输代码确认检测到 Claude、Codex CLI，以及 WorkBuddy、豆包、TeleAgent、DeepSeek Harness 四个桌面应用。Codex CLI 不再作为桌面应用通告。
 
@@ -59,7 +61,7 @@ Start-Process -FilePath 'C:\Users\steam\AppData\Local\Doubao\Application\app\Dou
 1. 安装 APK，手机与电脑连接同一个可信局域网或可达 VPN。
 2. 电脑地址：当前 `192.168.43.5`；端口：`22`；用户：`steam`；工作目录：`D:\dev\agent-control`。
 3. 使用该 Windows 账号的已有 SSH 私钥或真实账号密码登录。Windows Hello PIN 不等于 SSH 密码。
-4. 核对 SSH 主机指纹，接入方式选择“直接桌面”，连接后选择目标 Agent。
+4. 核对 SSH 主机指纹，WorkBuddy、DeepSeek Harness、Codex、Claude 可选择“仅 CLI”；TeleAgent、豆包选择“直接桌面”。连接后选择目标 Agent。
 5. 分别发送无副作用的短回复测试，检查电脑收到完整消息、手机收到真实回复并显示完成。先分别测试各应用，再测试第二条消息继续同一电脑对话。
 
 Windows 桌面适配目前只承诺其实现的文本协议；macOS 的图片、附件、确认卡片能力不能直接视为 Windows 已支持。遇到应用需要批准权限或回答问题时，先在电脑完成，并核对状态。
@@ -72,4 +74,4 @@ pwsh -NoProfile -File windows/Build-Android.ps1 -Test
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File android-app/tests/windows/Test-Logic.ps1
 ```
 
-Windows 构建脚本使用 PowerShell 7。CoreTest 包含硬编码 `/bin/zsh` 探测，在 Windows 上未运行；`-Test` 运行可移植的 InteractionTest、DesktopContinuityTest。
+Windows 构建脚本使用 PowerShell 7。CoreTest 包含硬编码 `/bin/zsh` 探测，在 Windows 上未运行；`-Test` 运行 WindowsTransportTest、InteractionTest、DesktopContinuityTest。

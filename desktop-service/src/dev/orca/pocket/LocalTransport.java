@@ -58,8 +58,14 @@ final class LocalTransport extends SshTransport {
     @Override public int run(String command,String stdin,Line line,AtomicBoolean cancelled,long timeout)throws Exception{execute(command,stdin,line,null,cancelled,timeout);return 0;}
     @Override public void interactive(String command,Duplex protocol,AtomicBoolean cancelled,long timeout)throws Exception{execute(command,"",null,protocol,cancelled,timeout);}
     @Override public int runWindowsScript(String script,Line line,AtomicBoolean cancelled,long timeout)throws Exception{
+        return windowsScript(script,line,null,cancelled,timeout);
+    }
+    @Override public void interactiveWindowsScript(String script,Duplex protocol,AtomicBoolean cancelled,long timeout)throws Exception{
+        windowsScript(script,null,protocol,cancelled,timeout);
+    }
+    private int windowsScript(String script,Line line,Duplex protocol,AtomicBoolean cancelled,long timeout)throws Exception{
         Path file=Files.createTempFile("agent-control-",".ps1");
-        try{Files.write(file,("\uFEFF"+script).getBytes(StandardCharsets.UTF_8));return run(Agent.powershell("& "+Agent.psQuote(file.toString())+"; if($null -ne $LASTEXITCODE){exit $LASTEXITCODE}"),"",line,cancelled,timeout);}
+        try{Files.write(file,(script.startsWith("\uFEFF")?script:"\uFEFF"+script).getBytes(StandardCharsets.UTF_8));String command=Agent.powershell("& "+Agent.psQuote(file.toString())+"; if($null -ne $LASTEXITCODE){exit $LASTEXITCODE}");if(protocol!=null){interactive(command,protocol,cancelled,timeout);return 0;}return run(command,"",line,cancelled,timeout);}
         finally{Files.deleteIfExists(file);}
     }
     @Override public byte[] download(String file,int limit)throws Exception{

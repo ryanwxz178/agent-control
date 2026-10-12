@@ -1,4 +1,4 @@
-// Launch only the bundled macOS CLI. Reuse DSH's credential service; copy no secrets.
+// Launch the bundled macOS/Windows CLI. Reuse DSH's credential service; copy no secrets.
 const fs=require('fs'),path=require('path'),os=require('os'),cp=require('child_process');
 const launcher=__LAUNCHER__;
 const resources=path.resolve(path.dirname(launcher),'../../..');
@@ -27,7 +27,10 @@ try{
   fs.writeFileSync(patch,JSON.stringify([{id:'acp',name:'@deepseek-ai/dsh-acp',config:selected}]),{mode:0o600});args.push('--patch',patch);
   process.stdout.write(JSON.stringify({type:'status',message:'DSH CLI 使用桌面模型：'+selected.provider+' / '+selected.model})+'\n');
  }
- child=cp.spawn(launcher,args,{stdio:'inherit'});
+ const windows=process.platform==='win32';
+ const executable=windows?path.resolve(resources,'../DeepSeek Harness.exe'):launcher;
+ const command=windows?['--expose-internals',path.join(resources,'app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js'),...args]:args;
+ child=cp.spawn(executable,command,{stdio:'inherit',...(windows?{env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},windowsHide:true}:{})});
  child.on('error',()=>{clean();process.stderr.write('DSH CLI 启动失败\n');process.exitCode=1;});
  child.on('exit',(code,signal)=>{clean();process.exitCode=code===null?1:code;});
  for(const signal of ['SIGTERM','SIGINT','SIGHUP'])process.on(signal,()=>{if(child)child.kill(signal);else clean();});

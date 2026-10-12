@@ -98,6 +98,8 @@ function flushQueue(){
   }).catch(error=>toast(error.message));
 }
 function dispatchMessage(text,messageId=cryptoId()){
+  const agent=state.agents.find(a=>a.id===state.selected);
+  if(state.profile.accessMode==='cli'&&agent?.kind==='desktop'){toast(agent.name+' 当前通过桌面接入，请将接入方式改为「直接桌面」或「默认接入」');$('agentButton').click();if(!$('input').value.trim()){$('input').value=text;saveDraft();syncComposer();}museQueue.pause();if(queueCompletion){const finish=queueCompletion;queueCompletion=null;finish();}return;}
   const request={...state.profile,agent:state.selected,prompt:text,history:conversationHistory(),messageId,conversationId:state.conversationId,accessMode:state.profile.accessMode||'auto'};
   if(state.profile.taskService)pendingSubmissions.set(messageId,state.conversationId);
   add({id:messageId,role:'user',text,createdAt:Date.now()});setBusy(true);call('send',JSON.stringify(request));
@@ -188,6 +190,7 @@ function applyTasks(tasks){
     taskSeen.set(task.id,seen);
     for(const message of state.messages.filter(m=>m.taskId===task.id&&m.browsers?.length)){const node=findNode(message.id);if(node)renderExtras(node,message);}
     if(['failed','unverifiable','cancelled'].includes(task.status)){
+      if(!state.messages.some(m=>m.taskId===task.id&&m.role==='assistant'))add({id:task.id+'_outcome',role:'assistant',agent:state.agents.find(a=>a.id===task.request.agent)?.name||'电脑任务',text:task.error||taskLabels[task.status],status:task.status==='failed'?'失败：'+(task.error||'任务未开始执行'):taskLabels[task.status],taskId:task.id});
       if(task.id===currentTasks().filter(t=>t.request.kind!=='monitor').at(-1)?.id)museQueue.pause();
       for(const message of state.messages.filter(m=>m.taskId===task.id)){for(const interaction of message.interactions||[]){interaction.state='closed';interaction.message='任务已结束，原确认失效';}const node=findNode(message.id);if(node)renderExtras(node,message);}
       for(const message of state.messages.filter(m=>m.taskId===task.id&&m.role==='assistant'&&m.status!=='已完成')){message.status=task.status==='failed'?'失败：'+task.error:taskLabels[task.status];const node=findNode(message.id);if(node)updateMessage(node,message);}

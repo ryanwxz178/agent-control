@@ -33,7 +33,15 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  await page.evaluate(()=>setTheme(true));await page.setViewportSize({width:320,height:540});await page.screenshot({path:path.join(output,'chat-dark-narrow.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  const original='多行指令\n  保留空格 <原文> & 符号';await page.evaluate(text=>{const node=renderMessage({id:'copy-original',role:'user',text});$('messages').append(node);},original);await page.locator('[data-id=copy-original] .user-copy-button').click();assert.equal(await page.evaluate(()=>calls.filter(c=>c[0]==='copyText').at(-1)[1]),original);
  assert.ok(await page.locator('.message.user').evaluateAll(nodes=>nodes.every(node=>{const b=node.querySelector('.user-copy-button').getBoundingClientRect(),bubble=node.getBoundingClientRect();return b.left>=0&&b.right<=bubble.left&&b.width>=44&&b.height>=44;})),'copy targets stay left of bubbles without leaving narrow viewport');
- assert.ok(await page.locator('#send').evaluate(node=>node.getBoundingClientRect().bottom<=innerHeight));assert.deepEqual(errors,[]);
+ assert.ok(await page.locator('#send').evaluate(node=>node.getBoundingClientRect().bottom<=innerHeight));
+ await page.evaluate(()=>{receive('connected',{profile:{host:'test-host',user:'test-user',port:22,directory:'D:/project',taskService:true,accessMode:'cli'},agents:[{id:'workbuddy',name:'WorkBuddy',kind:'desktop'}]});startConversation();state.selected='workbuddy';state.profile.accessMode='cli';receive('serviceReady',{value:true});});
+ const failed=await page.evaluate(()=>({id:'failure-before-run',status:'failed',error:'检测脚本启动失败',createdAt:Date.now(),request:{messageId:'failure-before-run',conversationId:state.conversationId,agent:'workbuddy',prompt:'未启动任务'},events:[{seq:1,type:'error',data:{message:'检测脚本启动失败'}}]}));
+ await page.evaluate(task=>receive('serviceSnapshot',{tasks:[task]}),failed);
+ assert.ok((await page.locator('#messages').textContent()).includes('检测脚本启动失败'),'failure before run must produce a visible assistant outcome');
+ const failureCount=await page.locator('.message.assistant').count();await page.evaluate(task=>receive('serviceSnapshot',{tasks:[task]}),failed);assert.equal(await page.locator('.message.assistant').count(),failureCount,'reconnect must not duplicate failure outcome');
+ const sendCount=await page.evaluate(()=>calls.filter(c=>c[0]==='send').length);await page.locator('#input').fill('保留桌面模式草稿');await page.locator('#send').click();
+ assert.equal(await page.evaluate(()=>calls.filter(c=>c[0]==='send').length),sendCount,'desktop-only agent cannot silently submit CLI task');assert.equal(await page.locator('#input').inputValue(),'保留桌面模式草稿');assert.equal(await page.locator('#agents').isVisible(),true);
+ assert.deepEqual(errors,[]);
  console.log('PASS OpenMuse chat port: send/stop, draft persistence, follow-up queue, Markdown/code copy, XSS rejection, tasks, reconnect/restart approval invalidation, narrow dark layout.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

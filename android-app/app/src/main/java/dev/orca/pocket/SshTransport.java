@@ -85,6 +85,12 @@ public class SshTransport implements AutoCloseable {
     }
     /** Windows OpenSSH can truncate exec stdin at 16KB; transfer scripts via SFTP. */
     public int runWindowsScript(String script,Line line,AtomicBoolean cancelled,long timeoutMs)throws Exception {
+        return windowsScript(script,line,null,cancelled,timeoutMs);
+    }
+    public void interactiveWindowsScript(String script,Duplex protocol,AtomicBoolean cancelled,long timeoutMs)throws Exception {
+        windowsScript(script,null,protocol,cancelled,timeoutMs);
+    }
+    private int windowsScript(String script,Line line,Duplex protocol,AtomicBoolean cancelled,long timeoutMs)throws Exception {
         Session s=session;
         if(s==null||!s.isConnected())throw new IOException("SSH 已断开，请重新连接电脑");
         if(cancelled.get())throw new CancellationException();
@@ -104,7 +110,9 @@ public class SshTransport implements AutoCloseable {
             if(cancelled.get())throw new CancellationException();
             transferTimeout.cancel(false);
             String nativePath=path.matches("^/[A-Za-z]:/.*")?path.substring(1):path;
-            return run(Agent.powershell("& "+Agent.psQuote(nativePath)+"; if($null -ne $LASTEXITCODE){exit $LASTEXITCODE}"),"",line,cancelled,timeoutMs);
+            String command=Agent.powershell("& "+Agent.psQuote(nativePath)+"; if($null -ne $LASTEXITCODE){exit $LASTEXITCODE}");
+            if(protocol!=null){interactive(command,protocol,cancelled,timeoutMs);return 0;}
+            return run(command,"",line,cancelled,timeoutMs);
         } catch(SftpException|JSchException e) {
             throw new IOException("Windows SFTP 传输失败，请检查 OpenSSH 的 sftp 子系统配置："+e.getMessage(),e);
         } finally {

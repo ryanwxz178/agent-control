@@ -219,7 +219,7 @@ final class PocketEngine {
             }else if(a.kind.equals("dsh")||a.kind.equals("buddy")){
                 if(a.kind.equals("dsh")&&!hostPermissions)throw new IllegalStateException("DeepSeek Harness 使用电脑现有权限，请先在设置中启用对应选项");
                 String acpCommand=AcpSession.command(a,directory,write,inventory.os);
-                if(a.id.equals("workbuddy")&&inventory.os.equals("Darwin")&&a.command.size()==2&&a.command.get(1).endsWith("/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy")){
+                if(a.bundledWorkBuddy()&&inventory.os.equals("Darwin")){
                     String script=host.asset("workbuddy-acp-launch.js").replace("__COMMAND__",new JSONArray(a.command).toString()).replace("__WRITE__",write?"true":"false");
                     acpCommand=Agent.login("cd -- "+Agent.quote(directory)+" && exec "+Agent.quote(a.command.get(0))+" -e "+Agent.quote(script));
                 }
@@ -228,7 +228,15 @@ final class PocketEngine {
                     String script=host.asset("dsh-acp-launch.js").replace("__LAUNCHER__",JSONObject.quote(launcher));
                     acpCommand=Agent.login("cd -- "+Agent.quote(directory)+" && exec env ELECTRON_RUN_AS_NODE=1 "+Agent.quote(resources+"../MacOS/DeepSeek Harness")+" -e "+Agent.quote(script));
                 }
-                ssh.interactive(acpCommand,new AcpSession(run,prompt,directory,computerKey(),a.name,decoder,interactions,attachments),cancelled,900000);
+                AcpSession protocol=new AcpSession(run,prompt,directory,computerKey(),a.name,decoder,interactions,attachments);
+                if(a.bundledWorkBuddy()&&inventory.os.equals("Windows")){
+                    String script=host.asset("workbuddy-windows-cli.js").replace("__COMMAND__",new JSONArray(a.command).toString()).replace("__WRITE__",write?"true":"false");
+                    ssh.interactiveWindowsScript("Set-Location -LiteralPath "+Agent.psQuote(directory)+"; "+Agent.windowsNodeScript(a.command.get(0),script,false),protocol,cancelled,900000);
+                }else if(a.id.equals("deepseek")&&inventory.os.equals("Windows")&&a.command.size()==1&&a.command.get(0).replace('\\','/').endsWith("/resources/runtime/cli/bin/dsh.cmd")){
+                    String launcher=a.command.get(0).replace('\\','/'),resources=launcher.substring(0,launcher.length()-"runtime/cli/bin/dsh.cmd".length());
+                    String script=host.asset("dsh-acp-launch.js").replace("__LAUNCHER__",JSONObject.quote(launcher));
+                    ssh.interactiveWindowsScript("Set-Location -LiteralPath "+Agent.psQuote(directory)+"; "+Agent.windowsNodeScript(resources+"../DeepSeek Harness.exe",script,true),protocol,cancelled,900000);
+                }else ssh.interactive(acpCommand,protocol,cancelled,900000);
                 result=decoder.text();
             }else{
                 String command=a.shell(directory,write,inventory.os);

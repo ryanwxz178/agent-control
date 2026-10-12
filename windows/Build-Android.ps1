@@ -39,6 +39,9 @@ New-Item -ItemType Directory -Force -Path "$serviceBuild/classes/browser" | Out-
 foreach ($name in @('src','package.json','package-lock.json','setup.mjs','LICENSE-OpenMuse')) { Copy-Item -LiteralPath "$repo/desktop-service/browser/$name" -Destination "$serviceBuild/classes/browser" -Recurse -Force }
 Run "$java/bin/jar.exe" @('--create','--file',"$app/app/src/main/assets/agent-control-service.jar",'-C',"$serviceBuild/classes",'.')
 if ($Test) {
+    New-Item -ItemType Directory -Force -Path "$serviceBuild/test-classes" | Out-Null
+    Run "$java/bin/javac.exe" @('-encoding','UTF-8','-cp',"$serviceBuild/classes",'-d',"$serviceBuild/test-classes","$repo/desktop-service/tests/WindowsTransportTest.java")
+    Run "$java/bin/java.exe" @('-ea','-cp',"$serviceBuild/test-classes;$serviceBuild/classes",'dev.orca.pocket.WindowsTransportTest')
     New-Item -ItemType Directory -Force -Path "$app/build/test-classes" | Out-Null
     @($engineSources) + @('CoreTest','InteractionTest','DesktopContinuityTest' | ForEach-Object { '"'+(Join-Path "$app/tests" ($_.ToString()+'.java')).Replace('\','/')+'"' }) | Set-Content "$app/build/test-sources.txt" -Encoding utf8
     Run "$java/bin/javac.exe" @('-encoding','UTF-8','-cp',$cp,'-d',"$app/build/test-classes","@$app/build/test-sources.txt")
