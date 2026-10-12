@@ -27,6 +27,7 @@ public static class PocketDesktop {
  [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr hwnd);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr hwnd,uint msg,IntPtr wParam,string lParam,uint flags,uint timeout,out IntPtr result);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr hwnd,uint msg,IntPtr wParam,StringBuilder lParam,uint flags,uint timeout,out IntPtr result);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr hwnd,uint msg,IntPtr wParam,IntPtr lParam,uint flags,uint timeout,out IntPtr result);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,StringBuilder text,int length);
  public static bool OwnedFileDialog(IntPtr dialog,IntPtr owner) {
   var name=new StringBuilder(256);GetClassName(dialog,name,256);
@@ -72,13 +73,30 @@ public static class PocketDesktop {
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from,uint to,bool attach);
+ [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
+ [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
+ [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr hwnd,int cmd);
+ [StructLayout(LayoutKind.Sequential)] struct NativeMessage {
+  public IntPtr hwnd;public uint message;public UIntPtr wParam;public IntPtr lParam;
+  public uint time;public int x;public int y;public uint reserved;
+ }
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool PeekMessage(out NativeMessage message,IntPtr hwnd,uint first,uint last,uint remove);
  public static bool Activate(IntPtr hwnd) {
-  if(GetForegroundWindow()==hwnd)return true;
+  if(hwnd==IntPtr.Zero||!IsWindow(hwnd)||!IsWindowVisible(hwnd))return false;
+  if(IsIconic(hwnd))ShowWindowAsync(hwnd,9);
+  if(GetForegroundWindow()==hwnd&&!IsIconic(hwnd))return true;
+  NativeMessage message;PeekMessage(out message,IntPtr.Zero,0,0,0);
   uint processId;uint current=GetCurrentThreadId();
   uint foreground=GetWindowThreadProcessId(GetForegroundWindow(),out processId);
   bool attached=foreground!=0&&foreground!=current&&AttachThreadInput(current,foreground,true);
-  try { ShowWindow(hwnd,9);SetForegroundWindow(hwnd);return GetForegroundWindow()==hwnd; }
-  finally { if(attached)AttachThreadInput(current,foreground,false); }
+  try {
+   SetForegroundWindow(hwnd);
+   // The target input queue stays separate. Give its asynchronous activation
+   // up to one second to complete before releasing the foreground association.
+   IntPtr result;
+   if(SendMessageTimeout(hwnd,0,IntPtr.Zero,IntPtr.Zero,2|32,1000,out result)==IntPtr.Zero)return false;
+  } finally { if(attached)AttachThreadInput(current,foreground,false); }
+  return IsWindow(hwnd)&&GetForegroundWindow()==hwnd&&!IsIconic(hwnd);
  }
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd,int cmd);
  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
