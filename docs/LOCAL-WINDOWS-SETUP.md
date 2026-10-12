@@ -95,3 +95,11 @@ Windows 构建脚本使用 PowerShell 7。CoreTest 包含硬编码 `/bin/zsh` �
 - 消息与回复均显示秒级时间；中文标签没有乱码。截图保存于 `android-app/test-output/emulator/`。
 
 本机桥接代码已更新；其他电脑也需要更新 Windows 桥接并重启。安装脚本为既有 profiles 添加缺失配置，保留已有自定义值。上述验收限于三个列出的文本接入路径，其他 Agent、图片及真实审批场景仍须分别验收。
+
+## 0.5.25 本机桥接附件能力更新（2026-10-12）
+
+已部署新版 Windows Bridge，安装文件摘要与源码一致。经用户确认 Windows 权限提示后，仅结束已核对身份且空闲的旧管理员权限桥接，再从普通权限桌面启动新版。新实例发布 `ready=true`、`busy=false`、`fileUploads=true`，WorkBuddy 的应用能力也为 `fileUploads=true`。未重启 WorkBuddy，也未重放手机失败的消息。
+
+安装器已修复既有私有目录的普通权限更新，并在旧实例持锁时提示重启，避免启动重复实例；Windows PowerShell 5.1 的 109 项检查通过。`dist/Agent-Control-Windows-Bridge.zip` 已同步最新桥接、安装器和说明，核心文件摘要校验通过。
+
+手机使用 0.5.25 即可，断开重连后选择 WorkBuddy「直接桌面」，重新选择图片并发送。上述结果确认了运行中的桥接已发布附件能力；手机图片进入 WorkBuddy 并取得模型回复仍需实际发送验收。
