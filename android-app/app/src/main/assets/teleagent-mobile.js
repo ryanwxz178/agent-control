@@ -58,7 +58,7 @@
   window.addEventListener('resize',revealFocusedAnswer);
   window.visualViewport?.addEventListener('resize',revealFocusedAnswer);
   const extras=renderExtras;
-  renderExtras=function(node,message){
+  renderExtras=function(node,message){return withChatScroll(()=>{
     const focused=document.activeElement;
     const field=focused?.matches('.interaction-text-input')&&node.contains(focused)?{token:focused.closest('.interaction').dataset.token,id:focused.dataset.fieldId,start:focused.selectionStart,end:focused.selectionEnd}:null;
     const disclosure=Array.from(node.querySelectorAll('.interaction-detail[open]')).map(n=>n.closest('.interaction').dataset.token);
@@ -69,12 +69,16 @@
       if(field&&panel.dataset.token===field.token){const input=Array.from(panel.querySelectorAll('.interaction-text-input')).find(n=>n.dataset.fieldId===field.id);if(input&&!input.disabled){input.focus({preventScroll:true});input.setSelectionRange(field.start,field.end);}}
     }
     sync();
-  };
+  });};
   const draw=render;render=function(){draw();sync();};
   const receiveMessage=window.receive;
   window.receive=function(type,data){
-    const before=visibleToken;receiveMessage(type,data);sync();
-    if(current&&visibleToken!==before&&current.interaction.state==='pending')requestAnimationFrame(()=>{sync();viewQuestion();});
+    const before=visibleToken,following=nearChatEnd(),existingTokens=new Set(state.messages.flatMap(message=>(message.interactions||[]).map(interaction=>interaction.token)));
+    receiveMessage(type,data);sync();
+    if(following&&current&&visibleToken!==before&&!existingTokens.has(current.interaction.token)&&current.interaction.state==='pending'){
+      const conversationId=state.conversationId,token=current.interaction.token;
+      requestAnimationFrame(()=>{sync();if(state.conversationId===conversationId&&current?.interaction.token===token&&current.interaction.state==='pending'&&chatFollowingLatest)viewQuestion();});
+    }
   };
   setInterval(sync,1000);
 })();

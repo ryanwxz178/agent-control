@@ -5,6 +5,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{window.calls=[];window.Pocket={save(){},previewAttachment:id=>calls.push(['preview',id]),respond:(...a)=>calls.push(a),inspectDesktop:id=>calls.push(['inspect',id]),operateDesktop:(...a)=>calls.push(['operate',...a]),tapDesktop:(...a)=>calls.push(['tap',...a]),requestAttachment:id=>calls.push(['file',id]),exportAttachment:id=>calls.push(['save',id])};});
  await page.goto('file://'+path.resolve('app/src/main/assets/index.html'));
+ await page.evaluate(()=>state.profile.taskService=false);
  await page.evaluate(()=>{receive('run',{id:'r',agent:'Codex',label:'回复'});receive('interaction',{id:'r',token:'t',kind:'approval',title:'Codex 需要你的确认',detail:'执行命令前需要确认\n工作目录：/tmp/项目\nprintf ORCA_APPROVAL_OK',state:'pending',expiresAt:Date.now()+180000,options:[{id:'accept',label:'仅允许这次'},{id:'decline',label:'拒绝'}]});});
  await page.screenshot({path:'test-output/interaction-light.png'});
  await page.getByRole('button',{name:'拒绝',exact:true}).click();assert.equal(await page.evaluate(()=>calls.length),1);assert.ok(await page.getByRole('button',{name:'拒绝',exact:true}).isDisabled());

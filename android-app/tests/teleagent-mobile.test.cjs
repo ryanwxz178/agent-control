@@ -1,11 +1,12 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 (async()=>{
- const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
  try{
  const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
  await page.addInitScript(()=>{window.calls=[];window.Pocket={save(){},respond:(...args)=>calls.push(args),copyText(){}};});
  await page.goto('file://'+path.resolve('app/src/main/assets/index.html'));
+ await page.evaluate(()=>state.profile.taskService=false);
  const card={id:'tele-mobile',token:'answer-one',title:'TeleAgent 等待确认',desktop:true,kind:'approval',state:'pending',expiresAt:Date.now()+180000,detail:'交互式问答 · 需要确认2个问题\n你希望画面是什么形状？\n请从下面选择，也可以自定义。',inputs:[{id:'shape',label:'自定义回答（必填）',value:'',required:true}],options:[...['圆形','矩形','其他（自定义输入）'].map(label=>({id:label,label})),{id:'下一题（1/2 已回答）',label:'下一题（1/2 已回答）'}]};
  await page.evaluate(card=>{startConversation();$('input').value='保留我的聊天草稿';receive('run',{id:card.id,agent:'TeleAgent',label:'回复'});receive('interaction',card);},card);
  await page.waitForTimeout(50);

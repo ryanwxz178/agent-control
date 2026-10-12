@@ -175,7 +175,7 @@ public static class HiddenStaActivationProbe {
     $controllerPath=Join-Path $folder 'controller.ps1'
     $controller=@'
 $ErrorActionPreference='Stop'
-Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'controller-native.cs')))
+Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'controller-native.cs'))) -ReferencedAssemblies System.dll,System.Core.dll,System.Management.dll
 $controllerFolder=Join-Path $PSScriptRoot 'controller'
 [IO.File]::WriteAllText((Join-Path $controllerFolder 'ready.txt'),'ready')
 while (![IO.File]::Exists((Join-Path $controllerFolder 'stop.txt'))) {

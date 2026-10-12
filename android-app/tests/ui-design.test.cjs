@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 (async()=>{
- const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
  const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:2});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{window.calls=[];window.Pocket={connect:r=>calls.push(['connect',JSON.parse(r)]),send:r=>calls.push(['send',JSON.parse(r)]),save(){},cancel(){},importKey(){},removeKey(){},resetTrust(){},copyText:t=>calls.push(['copy',t])};});
@@ -29,7 +29,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  await page.evaluate(()=>{receive('run',{id:'design-fail',agent:'DeepSeek Harness',label:'回复'});receive('update',{id:'design-fail',text:'未确认已进入新会话',status:'失败：未确认已进入新会话'});receive('error',{message:'未确认已进入新会话'});scrollEnd();});
  assert.equal(await page.locator('.notice.error').count(),0);assert.equal(await page.locator('.failure-details').getAttribute('open'),null);await shot('error-dark');
  await page.locator('.failure-details summary').click();assert.ok((await page.locator('.failure-details pre').textContent()).includes('未确认'));
- await page.evaluate(()=>{for(let i=0;i<15;i++)add({id:'long-'+i,role:'assistant',agent:'Codex',label:'回复',status:'已完成',text:'长对话阅读测试。\n'.repeat(4)});});
+ await page.evaluate(()=>{scrollEnd();for(let i=0;i<15;i++)add({id:'long-'+i,role:'assistant',agent:'Codex',label:'回复',status:'已完成',text:'长对话阅读测试。\n'.repeat(4)});});
  await page.waitForFunction(()=>document.getElementById('jumpLatest').hidden);
  await page.evaluate(()=>$('chat').scrollTop=0);
  await page.waitForFunction(()=>!document.getElementById('jumpLatest').hidden);await page.locator('#jumpLatest').click();await page.waitForFunction(()=>document.getElementById('jumpLatest').hidden);

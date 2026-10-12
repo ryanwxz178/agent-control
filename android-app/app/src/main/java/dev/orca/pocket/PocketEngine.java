@@ -6,7 +6,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 final class PocketEngine {
-    interface Host { String asset(String name)throws Exception; void event(String type,JSONObject data); boolean trust(String host,String fingerprint)throws Exception; default JSONObject agentConfig(String run)throws Exception{return new JSONObject();} default boolean durable(){return false;} default byte[] bytes(String name)throws Exception{return asset(name).getBytes(java.nio.charset.StandardCharsets.UTF_8);} default void file(String id,String name,byte[] data)throws Exception{} }
+    interface Host { String asset(String name)throws Exception; void event(String type,JSONObject data); boolean trust(String host,String fingerprint)throws Exception; default JSONObject agentConfig(String run)throws Exception{return new JSONObject();} default boolean durable(){return false;} default byte[] bytes(String name)throws Exception{return asset(name).getBytes(java.nio.charset.StandardCharsets.UTF_8);} default void file(String id,String name,byte[] data)throws Exception{} default byte[] previewImage(byte[] bytes,int maxBytes)throws Exception{if(bytes.length<=maxBytes)return bytes;throw new java.io.IOException("此运行环境无法生成 CLI 图片预览，请使用直接桌面或上传更小图片");} }
     private final Host host;
     final Interactions interactions;
     final Attachments attachments;
@@ -153,7 +153,7 @@ final class PocketEngine {
                 String context=history.isEmpty()?prompt:"当前任务：\n"+prompt+"\n\n此前对话（仅供上下文）：\n"+history;
                 String directory=request.optString("directory",profile.optString("directory"));
                 if(!Agent.absoluteDirectory(directory,inventory.os))throw new IllegalArgumentException("工作目录须为电脑上的绝对路径：Windows 如 C:\\Users\\你的用户名\\project，macOS/Linux 如 /Users/name/project");
-                TaskRouter.Runner runner=(a,text,allowWrite,label)->runAgent(a,text,allowWrite,label,directory,!mode.equals("cli")&&(!hasFiles||mode.equals("desktop")),hostPermissions,request.optString("conversationId"),id.equals("auto")?text:prompt,desktopFiles);
+                TaskRouter.Runner runner=(a,text,allowWrite,label)->runAgent(a,text,allowWrite,label,directory,!mode.equals("cli")&&(!hasFiles||mode.equals("desktop")),hostPermissions,request.optString("conversationId"),id.equals("auto")?text:prompt,desktopFiles,request.optJSONArray("inputFiles"));
                 if(id.equals("auto")){
                     List<Agent> eligible=new ArrayList<>();
                     for(Agent a:inventory.agents.values()){
@@ -175,7 +175,7 @@ final class PocketEngine {
             finally{busy.set(false);emit("busy","value",false);if(!ssh.connected())emit("connection","status","连接已断开");}
         });
     }
-    private String runAgent(Agent a,String prompt,boolean write,String label,String directory,boolean desktop,boolean hostPermissions,String conversationId,String currentPrompt,JSONArray desktopFiles)throws Exception{
+    private String runAgent(Agent a,String prompt,boolean write,String label,String directory,boolean desktop,boolean hostPermissions,String conversationId,String currentPrompt,JSONArray desktopFiles,JSONArray inputFiles)throws Exception{
         if(cancelled.get())throw new CancellationException();
         String run=UUID.randomUUID().toString();
         final String desktopPrompt=(conversationId.isEmpty()?prompt:currentPrompt)+"\n\n[Agent Control request "+run+"]";
@@ -238,7 +238,7 @@ final class PocketEngine {
                     String script=host.asset("dsh-acp-launch.js").replace("__LAUNCHER__",JSONObject.quote(launcher));
                     acpCommand=Agent.login("cd -- "+Agent.quote(directory)+" && exec env ELECTRON_RUN_AS_NODE=1 "+Agent.quote(resources+"../MacOS/DeepSeek Harness")+" -e "+Agent.quote(script));
                 }
-                AcpSession protocol=new AcpSession(run,prompt,directory,computerKey(),a.name,decoder,interactions,attachments);
+                AcpSession protocol=new AcpSession(run,prompt,directory,computerKey(),a.name,decoder,interactions,attachments,inputFiles,(path,limit)->{if(cancelled.get())throw new CancellationException();return ssh.download(path,limit);},host::previewImage);
                 if(a.bundledWorkBuddy()&&inventory.os.equals("Windows")){
                     String script=host.asset("workbuddy-windows-cli.js").replace("__COMMAND__",new JSONArray(a.command).toString()).replace("__WRITE__",write?"true":"false");
                     ssh.interactiveWindowsScript("Set-Location -LiteralPath "+Agent.psQuote(directory)+"; "+Agent.windowsNodeScript(a.command.get(0),script,false),protocol,cancelled,900000);
@@ -264,7 +264,7 @@ final class PocketEngine {
         }catch(Exception e){
             if(!a.desktop()&&desktop&&inventory.desktopAgent(a.id)!=null&&!cancelled.get()&&ssh.connected()&&canFallback(decoder,e)){
                 host.event("update",new JSONObject().put("id",run).put("text","CLI 启动失败，正在使用电脑上的 "+a.name+" 桌面应用。").put("status","已自动切换桌面"));
-                return runAgent(inventory.desktopAgent(a.id),prompt,write,label,directory,true,hostPermissions,conversationId,currentPrompt,desktopFiles);
+                return runAgent(inventory.desktopAgent(a.id),prompt,write,label,directory,true,hostPermissions,conversationId,currentPrompt,desktopFiles,inputFiles);
             }
             host.event("update",new JSONObject().put("id",run).put("text",decoder.text()).put("status",e instanceof EventDecoder.DesktopEnded?"已结束":cancelled.get()?"状态待确认":"失败："+message(e)));
             throw e;
@@ -374,6 +374,7 @@ final class PocketEngine {
     }
     static boolean canFallback(EventDecoder decoder,Exception e){
         if(decoder.workStarted)return false;
+        if(e instanceof AcpSession.Refusal&&!((AcpSession.Refusal)e).authentication)return false;
         String failure=message(e).toLowerCase(Locale.ROOT);
         if(failure.contains("状态未知")||failure.contains("超时")||failure.contains("timed out")||failure.contains("断开")||failure.contains("中断"))return false;
         String reason=(decoder.failed?decoder.text():message(e)).toLowerCase(Locale.ROOT);

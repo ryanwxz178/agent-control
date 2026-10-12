@@ -77,7 +77,23 @@ function Test-ComposerFilesReady($Nodes,$Editor,$Adapter,$Files) {
     foreach($tag in $tags) {
         if($Adapter.filePendingClass -and $tag.className -match $Adapter.filePendingClass){return $false}
         $parts=@($Nodes | Where-Object { $_.role -eq 'Text' -and (Test-Descendant $_ $tag.index $Nodes) })
-        $label=($parts | ForEach-Object { $_.name }) -join ''
+        $tagName=[string]$tag.name;$wrapper=$null
+        # Chromium may expose the filename only on WorkBuddy's sortable host.
+        # Accept its immediate wrapper only, inside this same editor.
+        if($tag.parent -ge 0 -and $tag.parent -lt $Nodes.Count) {
+            $parent=$Nodes[[int]$tag.parent]
+            if($parent.index -ne $Editor.index -and $parent.className -match '(?:^| )phrase-content-wrapper(?: |$)' -and (Test-Descendant $parent $Editor.index $Nodes)) {
+                $wrapper=$parent
+            }
+        }
+        if($parts.Count) { $label=($parts | ForEach-Object { $_.name }) -join '' }
+        elseif($tagName) { $label=$tagName }
+        elseif($wrapper) {
+            if(@($tags | Where-Object { Test-Descendant $_ $wrapper.index $Nodes }).Count -ne 1){return $false}
+            $label=[string]$wrapper.name
+        } else { return $false }
+        # A name fallback never overrides an existing, conflicting Text leaf.
+        if(($tagName -and $tagName -cne $label) -or ($wrapper -and $wrapper.name -and [string]$wrapper.name -cne $label)){return $false}
         $matching=@($Files | Where-Object { [IO.Path]::GetFileName($_.path) -ceq $label })
         if($matching.Count -ne 1 -or $seen.ContainsKey($label)){return $false}
         $seen[$label]=$true

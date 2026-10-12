@@ -1,10 +1,12 @@
 ﻿Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Windows.Forms
+Add-Type -AssemblyName WindowsBase
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Management;
 public static class PocketDesktop {
  public delegate bool EnumProc(IntPtr hwnd,IntPtr lp);
  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback,IntPtr param);
@@ -29,13 +31,101 @@ public static class PocketDesktop {
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr hwnd,uint msg,IntPtr wParam,StringBuilder lParam,uint flags,uint timeout,out IntPtr result);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr hwnd,uint msg,IntPtr wParam,IntPtr lParam,uint flags,uint timeout,out IntPtr result);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,StringBuilder text,int length);
+ [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access,bool inherit,uint processId);
+ [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr process,uint flags,StringBuilder path,ref uint length);
+ [DllImport("kernel32.dll")] static extern bool GetProcessTimes(IntPtr process,out long created,out long exited,out long kernel,out long user);
+ [DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr process,out uint code);
+ [DllImport("kernel32.dll")] static extern bool ProcessIdToSessionId(uint processId,out uint session);
+ [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
+ [DllImport("advapi32.dll")] static extern bool GetTokenInformation(IntPtr token,int kind,IntPtr buffer,int size,out int needed);
+ [DllImport("shell32.dll",CharSet=CharSet.Unicode)] static extern IntPtr CommandLineToArgvW(string commandLine,out int count);
+ [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
+ static readonly object pickerTrustLock=new object();
+ static readonly HashSet<string> trustedPickerUtilities=new HashSet<string>();
+ static readonly System.Threading.SemaphoreSlim pickerQueries=new System.Threading.SemaphoreSlim(2,2);
+ static string ProcessUser(IntPtr process) {
+  IntPtr token=IntPtr.Zero,buffer=IntPtr.Zero;
+  try {
+   if(!OpenProcessToken(process,8,out token))return null;
+   int needed;GetTokenInformation(token,1,IntPtr.Zero,0,out needed);
+   if(needed<=0||needed>4096)return null;
+   buffer=Marshal.AllocHGlobal(needed);
+   if(!GetTokenInformation(token,1,buffer,needed,out needed))return null;
+   return new System.Security.Principal.SecurityIdentifier(Marshal.ReadIntPtr(buffer)).Value;
+  } finally {if(buffer!=IntPtr.Zero)Marshal.FreeHGlobal(buffer);if(token!=IntPtr.Zero)CloseHandle(token);}
+ }
+ static string ProcessImage(IntPtr process) {
+  uint size=32768;var path=new StringBuilder((int)size);
+  return QueryFullProcessImageName(process,0,path,ref size)?path.ToString():null;
+ }
+ static bool UtilityArguments(string commandLine) {
+  if(String.IsNullOrEmpty(commandLine))return false;
+  int count;IntPtr arguments=CommandLineToArgvW(commandLine,out count);
+  if(arguments==IntPtr.Zero)return false;
+  try {
+   int type=0,subtype=0;
+   for(int i=1;i<count;i++) {
+    string value=Marshal.PtrToStringUni(Marshal.ReadIntPtr(arguments,i*IntPtr.Size));
+    if(value.StartsWith("--type=",StringComparison.Ordinal)){if(value!="--type=utility")return false;type++;}
+    if(value.StartsWith("--utility-sub-type=",StringComparison.Ordinal)){if(value!="--utility-sub-type=chrome.mojom.UtilWin")return false;subtype++;}
+   }
+   return type==1&&subtype==1;
+  } finally {LocalFree(arguments);}
+ }
+ static bool TrustedPickerUtility(uint dialogPid,uint ownerPid) {
+  IntPtr ownerProcess=IntPtr.Zero,dialogProcess=IntPtr.Zero;
+  try {
+   ownerProcess=OpenProcess(0x1000,false,ownerPid);dialogProcess=OpenProcess(0x1000,false,dialogPid);
+   if(ownerProcess==IntPtr.Zero||dialogProcess==IntPtr.Zero)return false;
+   long ownerCreated,childCreated,exited,kernel,user;uint ownerSession,childSession,exitCode;
+   if(!GetProcessTimes(ownerProcess,out ownerCreated,out exited,out kernel,out user)||!GetProcessTimes(dialogProcess,out childCreated,out exited,out kernel,out user)||ownerCreated<=0||childCreated<ownerCreated)return false;
+   if(!GetExitCodeProcess(ownerProcess,out exitCode)||exitCode!=259||!GetExitCodeProcess(dialogProcess,out exitCode)||exitCode!=259)return false;
+   if(!ProcessIdToSessionId(ownerPid,out ownerSession)||!ProcessIdToSessionId(dialogPid,out childSession)||ownerSession!=childSession||ownerSession!=(uint)System.Diagnostics.Process.GetCurrentProcess().SessionId)return false;
+   string ownerPath=ProcessImage(ownerProcess),childPath=ProcessImage(dialogProcess);
+   if(String.IsNullOrEmpty(ownerPath)||!String.Equals(System.IO.Path.GetFileName(ownerPath),"WorkBuddy.exe",StringComparison.OrdinalIgnoreCase)||!String.Equals(ownerPath,childPath,StringComparison.OrdinalIgnoreCase))return false;
+   string ownerUser=ProcessUser(ownerProcess),childUser=ProcessUser(dialogProcess);
+   using(var identity=System.Security.Principal.WindowsIdentity.GetCurrent()){if(String.IsNullOrEmpty(ownerUser)||ownerUser!=childUser||identity.User==null||ownerUser!=identity.User.Value)return false;}
+   string key=ownerPid+":"+ownerCreated+":"+dialogPid+":"+childCreated;
+   lock(pickerTrustLock){if(trustedPickerUtilities.Contains(key))return true;}
+   if(!pickerQueries.Wait(0))return false;
+   bool metadataTrusted=false;
+   var queryThread=new System.Threading.Thread(()=>{
+    try {
+     var options=new EnumerationOptions();options.Timeout=TimeSpan.FromMilliseconds(1000);options.ReturnImmediately=false;options.Rewindable=false;
+     using(var query=new ManagementObjectSearcher(new ManagementScope("root\\CIMV2"),new ObjectQuery("SELECT ParentProcessId,CreationDate,ExecutablePath,CommandLine FROM Win32_Process WHERE ProcessId="+dialogPid),options))
+     using(var matches=query.Get()) {
+      int count=0;
+      foreach(ManagementObject match in matches)using(match) {
+       count++;
+       if(Convert.ToUInt32(match["ParentProcessId"])!=ownerPid||!String.Equals(Convert.ToString(match["ExecutablePath"]),childPath,StringComparison.OrdinalIgnoreCase)||!UtilityArguments(Convert.ToString(match["CommandLine"])))return;
+       string created=Convert.ToString(match["CreationDate"]);
+       if(String.IsNullOrEmpty(created)||Math.Abs(ManagementDateTimeConverter.ToDateTime(created).ToUniversalTime().ToFileTimeUtc()-childCreated)>10)return;
+      }
+      metadataTrusted=count==1;
+     }
+    } catch {metadataTrusted=false;}
+    finally {pickerQueries.Release();}
+   });
+   // The caller's deadline also bounds WMI providers that ignore their timeout.
+   // A late result cannot approve a dialog; this worker never performs UI work.
+   try {queryThread.IsBackground=true;queryThread.SetApartmentState(System.Threading.ApartmentState.MTA);queryThread.Start();}
+   catch {pickerQueries.Release();throw;}
+   if(!queryThread.Join(1500)||!metadataTrusted)return false;
+   // Immutable process metadata is cached with both native creation times; a
+   // recycled PID or unreadable identity cannot inherit a previous approval.
+   lock(pickerTrustLock){if(trustedPickerUtilities.Count>=32)trustedPickerUtilities.Clear();trustedPickerUtilities.Add(key);}
+   return true;
+  } catch {return false;}
+  finally {if(dialogProcess!=IntPtr.Zero)CloseHandle(dialogProcess);if(ownerProcess!=IntPtr.Zero)CloseHandle(ownerProcess);}
+ }
  public static bool OwnedFileDialog(IntPtr dialog,IntPtr owner) {
   var name=new StringBuilder(256);GetClassName(dialog,name,256);
-  if(name.ToString()!="#32770"||!IsWindowVisible(dialog))return false;
+  if(owner==IntPtr.Zero||!IsWindow(owner)||name.ToString()!="#32770"||!IsWindowVisible(dialog))return false;
   uint dialogPid,ownerPid;GetWindowThreadProcessId(dialog,out dialogPid);GetWindowThreadProcessId(owner,out ownerPid);
-  if(dialogPid!=ownerPid)return false;
+  if(dialogPid==0||ownerPid==0)return false;
   var at=dialog;
-  for(int i=0;i<16;i++){at=GetWindow(at,4);if(at==owner)return true;if(at==IntPtr.Zero)return false;}
+  for(int i=0;i<16;i++){at=GetWindow(at,4);if(at==owner)return dialogPid==ownerPid||TrustedPickerUtility(dialogPid,ownerPid);if(at==IntPtr.Zero)return false;}
   return false;
  }
  public static IntPtr[] FileDialogsForOwner(IntPtr owner) {
@@ -60,8 +150,9 @@ public static class PocketDesktop {
   return selected.Count==1&&buttons.Count==1?new[]{selected[0],buttons[0]}:new IntPtr[0];
  }
  public static bool SelectNativeFiles(IntPtr dialog,IntPtr owner,string files) {
-  if(GetForegroundWindow()!=dialog||!OwnedFileDialog(dialog,owner)||files.Length>32767)return false;
+  if(files==null||GetForegroundWindow()!=dialog||!OwnedFileDialog(dialog,owner)||files.Length>32767)return false;
   var controls=NativeFileControls(dialog,owner);if(controls.Length!=2)return false;
+  if(GetForegroundWindow()!=dialog||!OwnedFileDialog(dialog,owner))return false;
   IntPtr result;
   if(SendMessageTimeout(controls[0],0x000C,IntPtr.Zero,files,2,2000,out result)==IntPtr.Zero||result==IntPtr.Zero)return false;
   var read=new StringBuilder(files.Length+2);
@@ -72,7 +163,7 @@ public static class PocketDesktop {
  }
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
- [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from,uint to,bool attach);
+ [DllImport("user32.dll",SetLastError=true)] static extern bool AttachThreadInput(uint from,uint to,bool attach);
  [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
  [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr hwnd,int cmd);
@@ -81,21 +172,34 @@ public static class PocketDesktop {
   public uint time;public int x;public int y;public uint reserved;
  }
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool PeekMessage(out NativeMessage message,IntPtr hwnd,uint first,uint last,uint remove);
+ public static string ActivationDiagnostic {get;private set;}
  public static bool Activate(IntPtr hwnd) {
+  ActivationDiagnostic="target="+hwnd+";valid="+IsWindow(hwnd)+";visible="+IsWindowVisible(hwnd);
   if(hwnd==IntPtr.Zero||!IsWindow(hwnd)||!IsWindowVisible(hwnd))return false;
   if(IsIconic(hwnd))ShowWindowAsync(hwnd,9);
-  if(GetForegroundWindow()==hwnd&&!IsIconic(hwnd))return true;
+  if(GetForegroundWindow()==hwnd&&!IsIconic(hwnd)){ActivationDiagnostic+=";alreadyForeground=true";return true;}
   NativeMessage message;PeekMessage(out message,IntPtr.Zero,0,0,0);
   uint processId;uint current=GetCurrentThreadId();
-  uint foreground=GetWindowThreadProcessId(GetForegroundWindow(),out processId);
-  bool attached=foreground!=0&&foreground!=current&&AttachThreadInput(current,foreground,true);
+  IntPtr before=GetForegroundWindow();uint foreground=GetWindowThreadProcessId(before,out processId);
+  bool attachAttempted=foreground!=0&&foreground!=current;
+  bool attached=attachAttempted&&AttachThreadInput(current,foreground,true);
+  int attachError=attachAttempted&&!attached?Marshal.GetLastWin32Error():0;
+  ActivationDiagnostic+=";before="+before+";beforeProcess="+processId+";beforeThread="+foreground+";currentThread="+current+";attachAttempted="+attachAttempted+";attached="+attached+";attachError="+attachError;
+  var timer=System.Diagnostics.Stopwatch.StartNew();
   try {
-   SetForegroundWindow(hwnd);
+   bool requested=SetForegroundWindow(hwnd);
+   ActivationDiagnostic+=";setForeground="+requested;
    // The target input queue stays separate. Give its asynchronous activation
    // up to one second to complete before releasing the foreground association.
    IntPtr result;
-   if(SendMessageTimeout(hwnd,0,IntPtr.Zero,IntPtr.Zero,2|32,1000,out result)==IntPtr.Zero)return false;
-  } finally { if(attached)AttachThreadInput(current,foreground,false); }
+   bool acknowledged=SendMessageTimeout(hwnd,0,IntPtr.Zero,IntPtr.Zero,2|32,1000,out result)!=IntPtr.Zero;
+   ActivationDiagnostic+=";ack="+acknowledged;
+   if(!acknowledged)return false;
+  } finally {
+   if(attached)AttachThreadInput(current,foreground,false);
+   timer.Stop();
+   ActivationDiagnostic+=";elapsedMs="+timer.ElapsedMilliseconds+";after="+GetForegroundWindow()+";iconic="+IsIconic(hwnd);
+  }
   return IsWindow(hwnd)&&GetForegroundWindow()==hwnd&&!IsIconic(hwnd);
  }
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd,int cmd);
@@ -110,7 +214,7 @@ public static class PocketDesktop {
  public static bool Active(int session) { IntPtr p; int n; if(!WTSQuerySessionInformation(IntPtr.Zero,session,8,out p,out n))return false; try{return n>=4 && Marshal.ReadInt32(p)==0;} finally{WTSFreeMemory(p);} }
  public static bool Unlocked() { var d=OpenInputDesktop(0,false,0x0100); if(d==IntPtr.Zero)return false; try{return SwitchDesktop(d);} finally{CloseDesktop(d);} }
 }
-'@
+'@ -ReferencedAssemblies System.dll,System.Core.dll,System.Management.dll
 [PocketDesktop]::SetProcessDPIAware() | Out-Null
 . "$PSScriptRoot\UiLogic.ps1"
 function Get-DesktopHealth {
@@ -162,7 +266,7 @@ function Invoke-UiButton($Node,$Window,[switch]$Ending) {
     if ($Node.raw.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)) { $pattern.Invoke(); return }
     if ($Node.raw.TryGetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$pattern)) { $pattern.Expand(); return }
     if ($Node.raw.TryGetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)) { $pattern.Select(); return }
-    $point=[Windows.Point]::new()
+    $point=[Windows.Point]::new(0,0)
     if (!$Node.raw.TryGetClickablePoint([ref]$point)) { throw '无法获得按钮的可点击位置，未操作' }
     Assert-Window $Window -Ending:$Ending
     if (![PocketDesktop]::SetCursorPos([int]$point.X,[int]$point.Y)) { throw '无法定位鼠标，未操作' }
@@ -215,26 +319,28 @@ function Invoke-DesktopFilePicker($Window,$Chat,$Adapter,$Files) {
         $node=Wait-DesktopFileMenu $Window $step
         if($step.hover) {
             # WorkBuddy's Add Files submenu opens on hover. Position comes from UIA only.
-            $point=[Windows.Point]::new()
+            $point=[Windows.Point]::new(0,0)
             if(!$node.raw.TryGetClickablePoint([ref]$point)){throw '附件子菜单没有可用位置，未发送'}
             Assert-Window $Window
             if(![PocketDesktop]::SetCursorPos([int]$point.X,[int]$point.Y)){throw '无法打开附件子菜单，未发送'}
         } else { Invoke-UiButton $node $Window }
     }
-    $dialog=$null
-    for($attempt=0;$attempt -lt 24;$attempt++) {
+    $dialog=$null;$focusChanged=$false;$dialogWait=[Diagnostics.Stopwatch]::StartNew()
+    for($attempt=0;$attempt -lt 24 -and $dialogWait.ElapsedMilliseconds -lt 6000;$attempt++) {
         Pulse
         $handles=@([PocketDesktop]::FileDialogsForOwner([IntPtr]$Window.Current.NativeWindowHandle))
+        if($dialogWait.ElapsedMilliseconds -ge 6000){break}
         if($handles.Count -gt 1){throw '目标 APP 的文件选择窗口不唯一，未发送'}
         if($handles.Count -eq 1) {
             if([PocketDesktop]::GetForegroundWindow() -ne [IntPtr]$handles[0]){throw '目标文件选择窗口没有前台焦点，未输入或发送'}
             $dialog=[Windows.Automation.AutomationElement]::FromHandle([IntPtr]$handles[0]);break
         }
-        # Another application's popup must not receive a filename.
-        if([PocketDesktop]::GetForegroundWindow() -ne [IntPtr]$Window.Current.NativeWindowHandle){throw '其他窗口获得焦点，未输入附件路径或发送'}
+        # Dialog activation can precede its visible/owned window enumeration.
+        # Only wait during that transition; never type before the checks above.
+        if([PocketDesktop]::GetForegroundWindow() -ne [IntPtr]$Window.Current.NativeWindowHandle){$focusChanged=$true}
         Start-Sleep -Milliseconds 250
     }
-    if(!$dialog){throw '目标 APP 未打开可识别的文件选择窗口，未发送'}
+    if(!$dialog){if($focusChanged){throw '未出现可验证归属的文件窗口或其他窗口获得焦点，未输入附件路径或发送'};throw '目标 APP 未打开可识别的文件选择窗口，未发送'}
     $controls=$null
     $nativeControls=$false
     for($attempt=0;$attempt -lt 24;$attempt++) {

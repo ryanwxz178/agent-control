@@ -28,6 +28,42 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
     private byte[] exportBytes;
     private String exportName;
     private volatile boolean exporting;
+    public byte[] previewImage(byte[] bytes,int maxBytes)throws Exception{
+        if(bytes==null||bytes.length==0||maxBytes<1)throw new IOException("图片预览参数无效");
+        if(bytes.length<=maxBytes)return bytes;
+        if(bytes.length>InputFiles.LIMIT)throw new IOException("图片超过 20MB，无法生成预览");
+        android.graphics.BitmapFactory.Options options=new android.graphics.BitmapFactory.Options();options.inJustDecodeBounds=true;
+        android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);
+        int width=options.outWidth,height=options.outHeight;
+        if(width<1||height<1)throw new IOException("无法解码图片，请上传有效的图片文件");
+        if(width>32768||height>32768||(long)width*height>100000000L)throw new IOException("图片原始尺寸过大，请缩小图片后重试");
+        int sample=1;while((width+sample-1)/sample>1280||(height+sample-1)/sample>1280)sample*=2;
+        options.inJustDecodeBounds=false;options.inSampleSize=sample;options.inScaled=false;options.inPreferredConfig=android.graphics.Bitmap.Config.ARGB_8888;
+        android.graphics.Bitmap decoded=null,preview=null;
+        try{
+            decoded=android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);
+            if(decoded==null)throw new IOException("无法解码图片，请重新上传有效的图片文件");
+            double scale=Math.min(1d,1280d/Math.max(decoded.getWidth(),decoded.getHeight()));
+            int previewWidth=Math.max(1,(int)Math.round(decoded.getWidth()*scale)),previewHeight=Math.max(1,(int)Math.round(decoded.getHeight()*scale));
+            preview=android.graphics.Bitmap.createBitmap(previewWidth,previewHeight,android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas=new android.graphics.Canvas(preview);canvas.drawColor(android.graphics.Color.WHITE);
+            canvas.drawBitmap(decoded,null,new android.graphics.Rect(0,0,previewWidth,previewHeight),new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+            decoded.recycle();decoded=null;
+            while(true){
+                for(int quality:new int[]{85,70,55,40}){
+                    ByteArrayOutputStream output=new ByteArrayOutputStream(Math.min(maxBytes,65536));
+                    if(!preview.compress(android.graphics.Bitmap.CompressFormat.JPEG,quality,output))throw new IOException("图片预览编码失败");
+                    if(output.size()<=maxBytes)return output.toByteArray();
+                }
+                int edge=Math.max(preview.getWidth(),preview.getHeight());if(edge<=1)throw new IOException("图片预览无法压缩到传输大小限制");
+                double shrink=Math.max(1,edge*3/4)/(double)edge;
+                android.graphics.Bitmap smaller=android.graphics.Bitmap.createScaledBitmap(preview,Math.max(1,(int)Math.round(preview.getWidth()*shrink)),Math.max(1,(int)Math.round(preview.getHeight()*shrink)),true);
+                preview.recycle();preview=smaller;
+            }
+        }catch(OutOfMemoryError memory){throw new IOException("图片预览内存不足，请缩小图片后重试",memory);}
+        catch(RuntimeException invalid){throw new IOException("图片预览生成失败，请检查图片是否有效",invalid);}
+        finally{if(decoded!=null)decoded.recycle();if(preview!=null)preview.recycle();}
+    }
     public void file(String id,String name,byte[] bytes)throws Exception{
         synchronized(downloaded){while(downloaded.size()>=2){String old=downloaded.keySet().iterator().next();downloaded.remove(old);downloadNames.remove(old);}downloaded.put(id,bytes);downloadNames.put(id,name);}
         JSONObject result=new JSONObject().put("attachmentId",id).put("name",name).put("size",bytes.length);

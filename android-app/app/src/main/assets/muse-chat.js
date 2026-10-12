@@ -38,16 +38,16 @@ markdown.renderer.rules.link_open=(tokens,index,options,env,self)=>{
 };
 const originalUpdate=updateMessage;
 const originalExtras=renderExtras;
-renderExtras=function(node,message){
+renderExtras=function(node,message){return withChatScroll(()=>{
   node.querySelectorAll('.browser-tool-card').forEach(card=>card.remove());originalExtras(node,message);
   for(const page of message.browsers||[]){
     const card=document.createElement('section');card.className='browser-tool-card';
     const label=document.createElement('small');label.textContent='浏览网页';const title=document.createElement('h3');title.textContent=page.title||page.url;
     const source=document.createElement('p');source.textContent=page.url;card.append(label,title,source);
-    if(page.preview){const image=document.createElement('img');image.src=page.preview;image.alt='Agent 阅读的网页：'+(page.title||page.url);card.append(image);}
+    if(page.preview){const image=document.createElement('img');followLoadedChatImage(image);image.src=page.preview;image.alt='Agent 阅读的网页：'+(page.title||page.url);card.append(image);}
     const button=document.createElement('button');button.className='secondary';const running=serviceTasks.some(t=>t.id===message.taskId&&liveTask(t));button.disabled=running||!connected;button.textContent=running?'任务结束后可接管':'接管浏览器';button.onclick=()=>browserRequest({op:'browserRead',sessionId:page.sessionId});card.append(button);node.append(card);
   }
-};
+});};
 updateMessage=function(node,message){
   originalUpdate(node,message);
   if(!String(message.status||'').startsWith('失败'))node.querySelector('.content').innerHTML=markdown.render(message.text||'');
@@ -102,7 +102,7 @@ function dispatchMessage(text,messageId=cryptoId(),files=[]){
   if((state.profile.accessMode==='cli'&&agent?.kind==='desktop')||(files.length&&state.selected==='auto'&&state.profile.accessMode==='desktop')){toast(state.selected==='auto'?'带附件的桌面对话请先选择一个 Agent':agent.name+' 当前通过桌面接入，请将接入方式改为「直接桌面」或「默认接入」');state.draftUploads=files;drawInputFiles();$('agentButton').click();if(!$('input').value.trim())$('input').value=text;saveDraft();syncComposer();museQueue.pause();if(queueCompletion){const finish=queueCompletion;queueCompletion=null;finish();}return;}
   const request={...state.profile,agent:state.selected,prompt:text,uploads:files.map(f=>f.id),historyUploads:[...new Set(state.messages.filter(m=>m.role==='user').flatMap(m=>(m.uploadedFiles||[]).map(f=>f.id)))].slice(-20),history:conversationHistory(),messageId,conversationId:state.conversationId,accessMode:agent?.kind==='desktop'?'desktop':state.profile.accessMode||'auto'};
   if(state.profile.taskService)pendingSubmissions.set(messageId,state.conversationId);
-  add({id:messageId,role:'user',text,uploadedFiles:files,createdAt:Date.now()});setBusy(true);call('send',JSON.stringify(request));
+  add({id:messageId,role:'user',text,uploadedFiles:files,createdAt:Date.now()},true);setBusy(true);call('send',JSON.stringify(request));
 }
 send=function(){
   if(pendingConversationStart){toast('正在结束上一会话，请稍候');return;}
@@ -193,8 +193,8 @@ function openTaskSheet(tab='conversations'){taskTab=tab;drawTaskList();if(!$('ta
 $('historyButton').onclick=()=>openTaskSheet();$('conversationsTab').onclick=()=>{taskTab='conversations';drawTaskList();};$('tasksTab').onclick=()=>{taskTab='tasks';drawTaskList();};$('browserTab').onclick=()=>{taskTab='browser';drawTaskList();};
 for(const id of ['taskSheet','browserViewer'])document.querySelector('[data-close="'+id+'"]').onclick=()=>$(id).close();
 const originalReceive=window.receive;
-function applyTasks(tasks){
-  serviceTasks=[...tasks].sort((a,b)=>a.createdAt-b.createdAt);for(const task of serviceTasks)pendingSubmissions.delete(task.id);const following=$('chat').scrollHeight-$('chat').clientHeight-$('chat').scrollTop<140;
+function applyTasks(tasks){return withChatScroll(()=>{
+  serviceTasks=[...tasks].sort((a,b)=>a.createdAt-b.createdAt);for(const task of serviceTasks)pendingSubmissions.delete(task.id);
   for(const task of currentTasks()){
     pendingSubmissions.delete(task.id);
     if(task.request.kind==='monitor')continue;
@@ -222,9 +222,9 @@ function applyTasks(tasks){
   }
   const active=currentTasks().filter(liveTask);setBusy(active.length>0||pendingHere());
   if(active.length)$('taskLabel').textContent=(taskLabels[active.at(-1).status]||'电脑正在处理')+' · 可继续输入下一条消息';
-  if(!busy&&!museQueue.getSnapshot().paused)flushQueue();if(following)scrollEnd();else $('jumpLatest').hidden=false;
+  if(!busy&&!museQueue.getSnapshot().paused)flushQueue();
   if($('taskSheet').open)drawTaskList();persist();
-}
+});}
 window.receive=(type,data)=>{
   if(type==='serviceResponse'&&data.conversationId===pendingConversationStart?.id){
     if(data.conversationEnded)finishConversationStart(pendingConversationStart.nextAgent);

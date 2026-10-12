@@ -61,6 +61,14 @@ function Write-Event([string]$Type,[string]$Text) {
     if ($Text.Length -gt 150000) { $Type='error'; $Text='回复超过大小限制' }
     $script:events.WriteLine((@{type=$Type;text=$Text;message=$Text}|ConvertTo-Json -Compress)); $script:events.Flush()
 }
+function Save-RequestDiagnostic($Failure) {
+    try {
+        $diagnostic=@{updatedUtc=[DateTime]::UtcNow.ToString('o');brokerId=$brokerId;errorType=$Failure.Exception.GetType().FullName;message=$Failure.Exception.Message;stack=$Failure.ScriptStackTrace;position=$Failure.InvocationInfo.PositionMessage}
+        if('PocketDesktop' -as [type]) { $diagnostic.activation=[PocketDesktop]::ActivationDiagnostic }
+        [IO.File]::WriteAllText("$Root\$script:activeId.diagnostic.json",($diagnostic|ConvertTo-Json -Depth 3 -Compress),$utf8)
+    } catch { # Diagnostic I/O must not replace the original task error.
+    }
+}
 try {
     Write-Host 'Agent Control Windows Bridge running. Keep this user session signed in and unlocked.'
     while ($true) {
@@ -80,7 +88,7 @@ try {
                 Pulse
                 if($r.operation -eq 'endConversation'){Invoke-EndDesktopConversation $app[0] $profiles.($r.app) $r.conversationId}
                 else{Invoke-DesktopChat $app[0] $profiles.($r.app) $r.prompt $r.conversationId $r.files}
-            } catch { Write-Event 'error' $_.Exception.Message }
+            } catch { $failure=$_; Save-RequestDiagnostic $failure; Write-Event 'error' $failure.Exception.Message }
             finally {
                 $events.Dispose(); $events=$null
                 # Remove completed request payloads. Keep events for 24h for reconnection diagnosis.
@@ -88,7 +96,7 @@ try {
                 $activeId=''
             }
         }
-        foreach ($old in @(Get-ChildItem -LiteralPath $Root | Where-Object { $_.Name -match '^[0-9a-f]{32}\.(events|lease|cancel|tmp|working)$' -and $_.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddDays(-1) })) { [IO.File]::Delete($old.FullName) }
+        foreach ($old in @(Get-ChildItem -LiteralPath $Root | Where-Object { $_.Name -match '^[0-9a-f]{32}\.(events|lease|cancel|tmp|working|diagnostic\.json)$' -and $_.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddDays(-1) })) { [IO.File]::Delete($old.FullName) }
         Start-Sleep -Milliseconds 300
     }
 } catch {

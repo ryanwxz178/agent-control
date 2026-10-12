@@ -1,0 +1,47 @@
+package dev.orca.pocket;
+
+import org.json.*;
+import java.nio.file.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+
+/** Opt-in model test. Requires explicit approval to send the supplied geometry fixture. */
+public final class WorkBuddyImageLiveTest {
+    public static void main(String[] args)throws Exception {
+        Path root=Path.of(args[0]).toAbsolutePath(),fixture=Path.of(args[1]).toAbsolutePath();
+        String prompt="仅说明附件中左右两种图形及其颜色，请简短回答";
+        CountDownLatch done=new CountDownLatch(1);
+        AtomicReference<String> reply=new AtomicReference<>(""),error=new AtomicReference<>(""),protocol=new AtomicReference<>("");
+        AtomicBoolean desktopFallback=new AtomicBoolean();
+        PocketEngine engine=new PocketEngine(new PocketEngine.Host(){
+            public String asset(String name)throws Exception{return Files.readString(root.resolve("android-app/app/src/main/assets").resolve(name));}
+            public boolean trust(String host,String fingerprint){return false;}
+            public void event(String type,JSONObject data){
+                if(type.equals("agentSession"))protocol.set(data.optString("protocol"));
+                if(type.equals("interaction")){error.set("Unexpected model permission request; test did not approve it");done.countDown();}
+                if(type.equals("error")){error.set(data.optString("message"));done.countDown();}
+                if(type.equals("update")){
+                    String status=data.optString("status");System.out.println("WorkBuddy image status: "+status);
+                    if(status.contains("切换桌面"))desktopFallback.set(true);
+                    if(status.startsWith("失败")){error.set(status);done.countDown();}
+                    if(status.equals("已完成")){reply.set(data.optString("text"));done.countDown();}
+                }
+            }
+        },new LocalTransport());
+        try {
+            engine.local(new JSONObject().put("host","local").put("port",22).put("user",System.getProperty("user.name")).put("directory",root.toString()).put("taskService",false));
+            InputFiles files=new InputFiles();
+            JSONObject uploaded=new JSONObject().put("name",fixture.getFileName().toString()).put("path",fixture.toString()).put("size",Files.size(fixture)).put("mime","image/png").put("computer",engine.computerKey()).put("directory",root.toString());
+            JSONObject publicFile=files.add(uploaded);
+            JSONObject request=new JSONObject().put("agent","workbuddy").put("accessMode","cli").put("write",false).put("directory",root.toString()).put("prompt",prompt).put("uploads",new JSONArray().put(publicFile.getString("id")));
+            files.attach(request,engine.computerKey());engine.send(request);
+            if(!done.await(150,TimeUnit.SECONDS)||!error.get().isEmpty())throw new AssertionError("Approved image test did not complete: "+error.get());
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(12);
+            while(engine.busy.get()&&System.nanoTime()<deadline)Thread.sleep(50);
+            String text=reply.get();
+            if(engine.busy.get()||desktopFallback.get()||!protocol.get().equals("acp")||!text.contains("红")||!text.contains("蓝")||!text.contains("圆")||!(text.contains("方")||text.contains("正方形")))throw new AssertionError("Unexpected image reply or transport: "+text);
+            JSONObject evidence=new JSONObject().put("passed",true).put("accessMode","cli").put("transport","Production InputFiles -> PocketEngine -> LocalTransport -> WorkBuddy WBIPC -> ACP native image").put("desktopFallback",false).put("protocol",protocol.get()).put("fixtureBytes",Files.size(fixture)).put("prompt",prompt).put("reply",text);
+            Files.createDirectories(root.resolve("android-app/test-output"));Files.writeString(root.resolve("android-app/test-output/workbuddy-image-cli-live.json"),evidence.toString(2));System.out.println(evidence.toString(2));
+        }finally{engine.close();}
+    }
+}

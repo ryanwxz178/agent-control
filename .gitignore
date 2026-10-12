@@ -4,6 +4,7 @@
 **/build/
 **/libs/
 **/test-output/
+**/.agent-control-input/
 dist/
 output/
 outputs/

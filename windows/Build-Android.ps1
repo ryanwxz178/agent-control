@@ -40,13 +40,13 @@ foreach ($name in @('src','package.json','package-lock.json','setup.mjs','LICENS
 Run "$java/bin/jar.exe" @('--create','--file',"$app/app/src/main/assets/agent-control-service.jar",'-C',"$serviceBuild/classes",'.')
 if ($Test) {
     New-Item -ItemType Directory -Force -Path "$serviceBuild/test-classes" | Out-Null
-    Run "$java/bin/javac.exe" @('-encoding','UTF-8','-cp',"$serviceBuild/classes",'-d',"$serviceBuild/test-classes","$repo/desktop-service/tests/WindowsTransportTest.java","$repo/desktop-service/tests/WindowsServiceTest.java")
-    foreach ($serviceTest in @('WindowsTransportTest','WindowsServiceTest')) { Run "$java/bin/java.exe" @('-ea','-cp',"$serviceBuild/test-classes;$serviceBuild/classes","dev.orca.pocket.$serviceTest") }
+    Run "$java/bin/javac.exe" @('-encoding','UTF-8','-cp',"$serviceBuild/classes",'-d',"$serviceBuild/test-classes","$repo/desktop-service/tests/WindowsTransportTest.java","$repo/desktop-service/tests/WindowsServiceTest.java","$repo/desktop-service/tests/ImagePreviewTest.java")
+    foreach ($serviceTest in @('WindowsTransportTest','WindowsServiceTest','ImagePreviewTest')) { Run "$java/bin/java.exe" @('-ea','-Xmx128m','-cp',"$serviceBuild/test-classes;$serviceBuild/classes","dev.orca.pocket.$serviceTest") }
     New-Item -ItemType Directory -Force -Path "$app/build/test-classes" | Out-Null
-    @($engineSources) + @('CoreTest','InteractionTest','DesktopContinuityTest','DesktopFilesTest','TeleAgentSessionTest','InputFilesTest' | ForEach-Object { '"'+(Join-Path "$app/tests" ($_.ToString()+'.java')).Replace('\','/')+'"' }) | Set-Content "$app/build/test-sources.txt" -Encoding utf8
+    @($engineSources) + @('CoreTest','InteractionTest','DesktopContinuityTest','DesktopFilesTest','TeleAgentSessionTest','InputFilesTest','WorkBuddyFilesTest' | ForEach-Object { '"'+(Join-Path "$app/tests" ($_.ToString()+'.java')).Replace('\','/')+'"' }) | Set-Content "$app/build/test-sources.txt" -Encoding utf8
     Run "$java/bin/javac.exe" @('-encoding','UTF-8','-cp',$cp,'-d',"$app/build/test-classes","@$app/build/test-sources.txt")
     # CoreTest requires macOS /bin/zsh even for its offline suite.
-    foreach ($name in @('InteractionTest','DesktopContinuityTest','DesktopFilesTest','InputFilesTest')) { Run "$java/bin/java.exe" @('-ea','-cp',"$app/build/test-classes;$cp","dev.orca.pocket.$name",$repo) }
+    foreach ($name in @('InteractionTest','DesktopContinuityTest','DesktopFilesTest','InputFilesTest','WorkBuddyFilesTest')) { Run "$java/bin/java.exe" @('-ea','-cp',"$app/build/test-classes;$cp","dev.orca.pocket.$name",$repo) }
     Run "$java/bin/java.exe" @('-ea','-cp',"$app/build/test-classes;$cp",'dev.orca.pocket.TeleAgentSessionTest',"$app/tests/teleagent-headless-events.json")
 }
 $build = Join-Path $app 'build'

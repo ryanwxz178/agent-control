@@ -192,6 +192,53 @@ $fileNodes[7].name=[IO.Path]::GetFileName($fileB.path);$fileNodes[6].parent=1
 Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA,$fileB))) 'transcript or sidebar filenames cannot confirm composer attachments'
 $fileNodes[6].parent=2
 Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA))) 'unrequested extra attachment prevents send readiness'
+# WorkBuddy exposes the sortable file token's accessible name without a Text leaf.
+$namedFileA=@{path='C:\work\.agent-control-input\33333333-3333-3333-3333-333333333333-attachment-smoke.png';size=82}
+$namedFileB=@{path='C:\work\.agent-control-input\44444444-4444-4444-4444-444444444444-second.png';size=82}
+$namedFileNodes=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' ''),(Node 3 2 'Text' '总结附件'),(Node 4 2 'Group' ([IO.Path]::GetFileName($namedFileA.path))),(Node 5 4 'Group' ''))
+$namedFileNodes[4]|Add-Member className '_tag_h25vi_19 _fileTag_h25vi_111 _inlineTag_h25vi_149'
+$namedFileNodes[4]|Add-Member ariaRole 'sortable'
+Assert (Test-ComposerFilesReady $namedFileNodes $namedFileNodes[2] $profiles.workbuddy @($namedFileA)) 'sortable file token with a named host and no Text leaf confirms the exact uploaded basename'
+$namedFileNodes[4].name='forged-'+[IO.Path]::GetFileName($namedFileA.path)
+Assert (!(Test-ComposerFilesReady $namedFileNodes $namedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'named file token rejects a prefixed lookalike instead of matching a contained basename'
+$namedFileNodes[4].name=[IO.Path]::GetFileName($namedFileA.path).ToUpperInvariant()
+Assert (!(Test-ComposerFilesReady $namedFileNodes $namedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'named file token preserves exact basename case'
+$namedFileNodes[4].name=[IO.Path]::GetFileName($namedFileA.path)
+$namedFileNodes+=(Node 6 2 'Group' ([IO.Path]::GetFileName($namedFileB.path)));$namedFileNodes+=(Node 7 6 'Group' '')
+$namedFileNodes[6]|Add-Member className '_fileTag_h25vi_111'
+$namedFileNodes[6]|Add-Member ariaRole 'sortable'
+Assert (Test-ComposerFilesReady $namedFileNodes $namedFileNodes[2] $profiles.workbuddy @($namedFileA,$namedFileB)) 'two distinct named tokens confirm all expected files without Text leaves'
+$namedFileNodes[6].name=[IO.Path]::GetFileName($namedFileA.path)
+Assert (!(Test-ComposerFilesReady $namedFileNodes $namedFileNodes[2] $profiles.workbuddy @($namedFileA,$namedFileB))) 'duplicate named file token cannot replace another expected file'
+$namedFileNodes[6].name=[IO.Path]::GetFileName($namedFileB.path);$namedFileNodes[6].className+=' _uploading_h25vi_51'
+Assert (!(Test-ComposerFilesReady $namedFileNodes $namedFileNodes[2] $profiles.workbuddy @($namedFileA,$namedFileB))) 'named token still cannot confirm an uploading attachment'
+$namedFileNodes[6].className='_fileTag_h25vi_111 _failed_h25vi_60'
+Assert (!(Test-ComposerFilesReady $namedFileNodes $namedFileNodes[2] $profiles.workbuddy @($namedFileA,$namedFileB))) 'named token still cannot confirm a failed attachment'
+$namedFileNodes[6].className='unrelated-file-control'
+Assert (!(Test-ComposerFilesReady $namedFileNodes $namedFileNodes[2] $profiles.workbuddy @($namedFileA,$namedFileB))) 'filename on a control outside the configured file tag class does not confirm attachment'
+$fileNodes[4].name=[IO.Path]::GetFileName($fileA.path);$fileNodes[5].name='forged-'+[IO.Path]::GetFileName($fileA.path)
+Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA,$fileB))) 'matching tag name never overrides a conflicting existing Text filename'
+$fileNodes[5].name=[IO.Path]::GetFileName($fileA.path);$fileNodes[4].name='forged-'+[IO.Path]::GetFileName($fileA.path)
+Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA,$fileB))) 'conflicting named host and Text filename remain ambiguous and cannot confirm attachments'
+# The observed sortable name can instead belong to the tag's direct wrapper.
+$wrappedFileNodes=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' ''),(Node 3 2 'Text' '总结附件'),(Node 4 2 'Group' ([IO.Path]::GetFileName($namedFileA.path))),(Node 5 4 'Group' ''))
+$wrappedFileNodes[4]|Add-Member className 'phrase-content-wrapper'
+$wrappedFileNodes[4]|Add-Member ariaRole 'button'
+$wrappedFileNodes[5]|Add-Member className '_tag_h25vi_19 _fileTag_h25vi_111 _inlineTag_h25vi_149'
+Assert (Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA)) 'observed named sortable wrapper confirms its sole unnamed file tag without a Text leaf'
+$wrappedFileNodes[4].className='phrase-content-wrapper-extra'
+Assert (!(Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'wrapper fallback requires the exact observed class token'
+$wrappedFileNodes[4].className='phrase-content-wrapper';$wrappedFileNodes[4].parent=1
+Assert (!(Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'named wrapper outside the current editor cannot confirm an attachment'
+$wrappedFileNodes[4].parent=2;$wrappedFileNodes[5].parent=2
+$wrappedFileNodes[2]|Add-Member className 'phrase-content-wrapper';$wrappedFileNodes[2].name=[IO.Path]::GetFileName($namedFileA.path)
+Assert (!(Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'editor itself cannot provide the file wrapper name fallback'
+$wrappedFileNodes[5].parent=4;$wrappedFileNodes[5].name='forged-'+[IO.Path]::GetFileName($namedFileA.path)
+Assert (!(Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'conflicting direct wrapper and file tag names cannot confirm an attachment'
+$wrappedFileNodes[5].name='';$wrappedFileNodes+=(Node 6 5 'Text' ('forged-'+[IO.Path]::GetFileName($namedFileA.path)))
+Assert (!(Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'named direct wrapper cannot override a conflicting filename Text leaf'
+$wrappedFileNodes[6].name=[IO.Path]::GetFileName($namedFileA.path);$wrappedFileNodes[4].name='forged-'+[IO.Path]::GetFileName($namedFileA.path)
+Assert (!(Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'correct filename Text leaf cannot hide a conflicting direct wrapper name'
 $messageFiles=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' ''),(Node 3 1 'Group' ''),(Node 4 3 'Text' '总结附件'),(Node 5 3 'Group' ''),(Node 6 5 'Text' ([IO.Path]::GetFileName($fileA.path))),(Node 7 3 'Button' '复制'),(Node 8 3 'Text' '已完成'),(Node 9 3 'Text' '附件已总结'),(Node 10 3 'Button' '复制'),(Node 11 1 'Button' '发送'))
 $messageFiles[5]|Add-Member className '_fileTag_h25vi_111 _readOnly_h25vi_57';$messageFiles[10]|Add-Member className '_copyButton_1ncbp_1'
 $fileReply=Get-ReplyState $messageFiles $profiles.workbuddy '总结附件'
@@ -271,9 +318,108 @@ try {
     Assert $updated.fileUploads 'new bridge advertises attachment capability so old brokers cannot silently drop files'
     Assert ([IO.File]::ReadAllText("$Root/status.previous") -eq $first) 'previous heartbeat retained during atomic replacement'
 } finally { [IO.Directory]::Delete($Root,$true) }
+# Diagnostic persistence must preserve request context without masking the error.
+$diagnosticWriter=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Save-RequestDiagnostic'},$true)
+Assert ($null -ne $diagnosticWriter) 'production request diagnostic writer is available independently of the broker loop'
+& {
+    Invoke-Expression ($diagnosticWriter.Extent.Text.Replace('$Root\','$Root/'))
+    $diagnosticFolder=Join-Path ([IO.Path]::GetTempPath()) ('orca-diagnostic-test-'+[Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($diagnosticFolder)|Out-Null
+    $previousActiveId=$script:activeId
+    $script:activeId=[Guid]::NewGuid().ToString('N')
+    $diagnosticPath=Join-Path $diagnosticFolder ($script:activeId+'.diagnostic.json')
+    $diagnosticLock=$null
+    try {
+        $Root=$diagnosticFolder;$brokerId='diagnostic-fixture-broker';$utf8=[Text.UTF8Encoding]::new($false)
+        function Throw-DiagnosticFixture { throw [InvalidOperationException]::new(('诊断 fixture "quoted"'+[Environment]::NewLine+'second line')) }
+        $failure=$null
+        try { Throw-DiagnosticFixture } catch { $failure=$_ }
+        Save-RequestDiagnostic $failure
+        Assert ([IO.File]::Exists($diagnosticPath) -and @(Get-ChildItem -LiteralPath $diagnosticFolder -File).Count -eq 1) 'diagnostic output is bound to the active request ID filename'
+        $originalJson=[IO.File]::ReadAllText($diagnosticPath,[Text.Encoding]::UTF8)
+        $diagnostic=$originalJson|ConvertFrom-Json
+        Assert ($diagnostic.brokerId -eq $brokerId -and $diagnostic.errorType -eq $failure.Exception.GetType().FullName -and $diagnostic.message -ceq $failure.Exception.Message) 'ErrorRecord type and Unicode quoted multiline message survive diagnostic JSON encoding'
+        Assert ($diagnostic.stack -ceq $failure.ScriptStackTrace -and $diagnostic.position -ceq $failure.InvocationInfo.PositionMessage -and $diagnostic.stack -and $diagnostic.position) 'diagnostic JSON retains the actual ErrorRecord stack and source position'
+        $recordedUtc=[regex]::Match($originalJson,'"updatedUtc":"([^"]+)"').Groups[1].Value
+        Assert ($recordedUtc.EndsWith('Z') -and [Math]::Abs(([DateTimeOffset]::UtcNow-[DateTimeOffset]::Parse($recordedUtc)).TotalSeconds) -lt 5) 'request diagnostic records a fresh UTC timestamp'
+        $Root=Join-Path $diagnosticFolder 'missing-queue'
+        $threw=$false
+        try { Save-RequestDiagnostic $failure } catch { $threw=$true }
+        Assert (!$threw -and ![IO.Directory]::Exists($Root)) 'missing diagnostic queue does not throw or create an unexpected directory'
+        $Root=$diagnosticFolder
+        $diagnosticLock=[IO.File]::Open($diagnosticPath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+        $threw=$false
+        try { Save-RequestDiagnostic $failure } catch { $threw=$true }
+        $diagnosticLock.Dispose();$diagnosticLock=$null
+        Assert (!$threw -and [IO.File]::ReadAllText($diagnosticPath,[Text.Encoding]::UTF8) -ceq $originalJson) 'unwritable diagnostic destination does not throw or replace the original diagnostic'
+    } finally {
+        if ($null -ne $diagnosticLock) { $diagnosticLock.Dispose() }
+        $script:activeId=$previousActiveId
+        if ([IO.File]::Exists($diagnosticPath)) { [IO.File]::Delete($diagnosticPath) }
+        [IO.Directory]::Delete($diagnosticFolder,$false)
+    }
+}
 # Compile the P/Invoke helper without invoking Windows APIs on this host.
 $desktopSource=Get-Content "$repo/windows/Desktop.ps1" -Raw -Encoding UTF8
 $desktopAst=[Management.Automation.Language.Parser]::ParseInput($desktopSource,[ref]$tokens,[ref]$parseErrors)
+if ($env:OS -eq 'Windows_NT') {
+    # Exercise both production point fallbacks in memory. No real element,
+    # HWND, pointer movement, file dialog or APP is touched by this fixture.
+    Add-Type -AssemblyName WindowsBase,UIAutomationTypes,UIAutomationClient
+    Add-Type -TypeDefinition @'
+using System;
+public static class ClickPointFixtureDesktop {
+ public static int PickerQueries;
+ public static int UnsafeCalls;
+ public static IntPtr[] FileDialogsForOwner(IntPtr owner) { PickerQueries++;return new IntPtr[0]; }
+ public static bool SetCursorPos(int x,int y) { UnsafeCalls++;throw new InvalidOperationException("Unexpected fixture pointer movement."); }
+ public static void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra) { UnsafeCalls++;throw new InvalidOperationException("Unexpected fixture mouse action."); }
+}
+'@
+    & {
+        function New-ClickPointRaw {
+            $raw=[pscustomobject]@{PatternAttempts=0;PointAttempts=0;PointType=''}
+            $raw|Add-Member -MemberType ScriptMethod -Name TryGetCurrentPattern -Value {
+                param($Pattern,$Output)
+                $this.PatternAttempts++;$Output.Value=$null;return $false
+            }
+            $raw|Add-Member -MemberType ScriptMethod -Name TryGetClickablePoint -Value {
+                param($Point)
+                $this.PointAttempts++;$this.PointType=$Point.Value.GetType().FullName;return $false
+            }
+            return $raw
+        }
+        function Assert-Window($Window,[switch]$Ending) { }
+        $buttonAst=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-UiButton'},$true)
+        $pickerAst=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-DesktopFilePicker'},$true)
+        Assert ($null -ne $buttonAst -and $null -ne $pickerAst) 'production button and attachment hover fallbacks are available for in-memory testing'
+        Invoke-Expression $buttonAst.Extent.Text.Replace('[PocketDesktop]','[ClickPointFixtureDesktop]')
+        $raw=New-ClickPointRaw
+        $window=@{Current=@{NativeWindowHandle=123}}
+        $button=@{enabled=$true;offscreen=$false;raw=$raw}
+        $failure=''
+        try { Invoke-UiButton $button $window } catch { $failure=$_.Exception.Message }
+        Assert ($failure -eq '无法获得按钮的可点击位置，未操作') 'WinPS production button fallback reaches the safe missing-point error rather than failing Point construction'
+        Assert ($raw.PatternAttempts -eq 3 -and $raw.PointAttempts -eq 1 -and $raw.PointType -eq 'System.Windows.Point') 'button fallback tries supported patterns then passes a real Point through ref to the provider'
+        Assert ([ClickPointFixtureDesktop]::UnsafeCalls -eq 0) 'missing button point never moves or clicks the pointer'
+        # Skip only the already-tested trigger click so the production picker
+        # can reach its independent submenu-hover point initialization.
+        function Invoke-UiButton($Node,$Window,[switch]$Ending) { }
+        function Get-UiSnapshot($Window) { return @() }
+        function Get-ComposerFileTags($Nodes,$Editor,$Adapter) { return @() }
+        function Wait-DesktopFileMenu($Window,$Step) { return $hoverNode }
+        Invoke-Expression $pickerAst.Extent.Text.Replace('[PocketDesktop]','[ClickPointFixtureDesktop]')
+        $hoverRaw=New-ClickPointRaw
+        $hoverNode=@{raw=$hoverRaw}
+        $chat=@{editor=@{index=0};nodes=@(@{role='Button';enabled=$true;offscreen=$false;className='fixture-upload-menu'})}
+        $adapter=@{fileMenuClass='^fixture-upload-menu$';fileMenuSteps=@(@{hover=$true;name='fixture submenu'})}
+        $failure=''
+        try { Invoke-DesktopFilePicker $window $chat $adapter @() } catch { $failure=$_.Exception.Message }
+        Assert ($failure -eq '附件子菜单没有可用位置，未发送') 'WinPS production attachment hover reaches the safe missing-point error rather than failing Point construction'
+        Assert ($hoverRaw.PointAttempts -eq 1 -and $hoverRaw.PointType -eq 'System.Windows.Point') 'attachment hover passes an initialized Point through ref to the provider'
+        Assert ([ClickPointFixtureDesktop]::PickerQueries -eq 1 -and [ClickPointFixtureDesktop]::UnsafeCalls -eq 0) 'attachment hover failure stops before pointer movement or opening a file picker'
+    }
+}
 $conversationWriter=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Save-DesktopConversation'},$true)
 Invoke-Expression $conversationWriter.Extent.Text
 $conversationFolder=Join-Path ([IO.Path]::GetTempPath()) ('orca-conversation-test-'+[Guid]::NewGuid().ToString('N'))
@@ -284,7 +430,7 @@ try{
     Assert (([IO.File]::ReadAllText($conversationFile,[Text.Encoding]::UTF8)|ConvertFrom-Json).status -eq 'complete') 'desktop completion replaces pending state on Windows PowerShell 5.1'
 }finally{if([IO.Directory]::Exists($conversationFolder)){[IO.Directory]::Delete($conversationFolder,$true)}}
 $native=[regex]::Match($desktopSource,"(?s)Add-Type -TypeDefinition @'\r?\n(.*?)\r?\n'@").Groups[1].Value
-Add-Type -TypeDefinition $native
+Add-Type -TypeDefinition $native -ReferencedAssemblies System.dll,System.Core.dll,System.Management.dll
 Assert ($null -ne ('PocketDesktop' -as [type])) 'native Windows API declarations compile'
 # Syntax-parse every production PowerShell file, including phone-delivered scripts.
 foreach ($file in @((Get-ChildItem "$repo/windows/*.ps1"),(Get-ChildItem "$repo/android-app/app/src/main/assets/*windows*.ps1")) | ForEach-Object { $_ }) {

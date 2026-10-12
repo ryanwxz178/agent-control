@@ -57,6 +57,8 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\
 
 当前 Windows 适配依据 WorkBuddy 5.7.7 的「添加文件 → 本地文件」菜单和输入框文件标签实现；缺少相应控件的 APP 会提示尚未发送。文件类型还须满足 WorkBuddy 的限制。如果附件添加失败或中途断开，请在电脑检查输入框草稿，不要自动重复发送。
 
+WorkBuddy 的系统文件选择器可能由独立 utility 子进程打开。桥接保留主窗口 owner 链验证，并核对该子进程与主进程的完整程序路径、用户、会话、创建时间、直接父进程及精确 utility 参数；身份无法读取或窗口没有前台焦点时停止。原生身份查询有超时，迟到结果不授权输入。`android-app/tests/windows/Test-UtilityFilePicker.ps1` 使用独立测试程序验证允许与拒绝分支。
+
 更新源码后，在电脑空闲时关闭旧 Bridge 进程，重新运行 `windows/Install.ps1` 并启动新版 Bridge，再在手机重新连接。旧版桥接没有附件能力标记，新手机会拒绝向它提交文件消息。安装脚本会为已有 profiles.json 补入新增字段并保留用户配置。
 
 安装脚本会保留已符合要求的私有目录权限，普通权限会话可更新这种既有安装。如果旧 Bridge 仍持有 `broker.lock`，脚本只更新文件并提示关闭旧进程，不再启动重复实例。更新磁盘文件不会替换正在运行的桥接代码；必须重启后才会发布附件能力。若旧桥接以管理员权限启动，需从电脑使用具备权限的任务管理器结束对应 Bridge 进程，再从普通权限桌面运行 `windows/Start-Bridge.cmd`。
@@ -75,9 +77,11 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\
 
 窗口切到前台可能异步完成。桥接会等待目标窗口的激活确认（最多一秒），核对实际前台窗口后才输入；最小化窗口使用异步恢复，已失效的窗口句柄直接拒绝。`android-app/tests/windows/Test-Activation.ps1` 提供独立原生窗口验收，覆盖后台 STA 调用、延迟响应、最小化恢复和输入关联释放；运行时只操作测试自建窗口，需要空闲且解锁的桌面。
 
-停止或 SSH 中断只请求停止桥接交互，不保证已发送给应用的任务被取消。应到电脑核实，不能直接重发修改任务。手机仍需前台运行。Windows 桌面路径本轮验证普通文本任务；macOS 的确认卡片、应用画面操作与图片提取不能直接视为 Windows 已支持。Windows ACP/app-server 的真实模型交互也未验收。
+停止或 SSH 中断只请求停止桥接交互，不保证已发送给应用的任务被取消。应到电脑核实，不能直接重发修改任务。手机仍需前台运行。macOS 的确认卡片、应用画面操作与图片提取不能直接视为 Windows 已支持。Windows WorkBuddy CLI 已在本机通过生产附件处理与 ACP 接口取得真实图片回复；实体手机、SSH 和其他 Agent 的图片路径仍需分别验收，记录见 `docs/LOCAL-WINDOWS-SETUP.md`。
 
-已处理的请求正文立即删除，事件诊断文件保留最多 24 小时（桥接运行时清理）。崩溃遗留的 working 请求不会重新执行，24 小时后清理。文件 ACL 仅允许当前用户和 SYSTEM；同用户程序具有相同访问权，这不是对同用户恶意程序的隔离。
+点击回退和附件菜单悬停显式使用 `Point(0,0)`，兼容 Windows PowerShell 5.1；缺少实际可点击位置时停止，不使用默认坐标点击。
+
+已处理的请求正文立即删除，事件与错误堆栈诊断文件保留最多 24 小时（桥接运行时清理）。失败请求的 `<请求 ID>.diagnostic.json` 保存错误类型、消息和源码位置，不另存请求正文；日志可能包含本机路径，分享前应脱敏。崩溃遗留的 working 请求不会重新执行，24 小时后清理。文件 ACL 仅允许当前用户和 SYSTEM；同用户程序具有相同访问权，这不是对同用户恶意程序的隔离。
 
 卸载自动启动可运行 `Uninstall.ps1`，然后关闭手工启动的 Bridge 窗口。文件保留，不改动 OpenSSH 配置。
 

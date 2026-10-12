@@ -8,6 +8,13 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import javax.imageio.*;
+import javax.imageio.stream.MemoryCacheImageInputStream;
+import javax.imageio.stream.MemoryCacheImageOutputStream;
 import org.json.*;
 
 /** Single-owner service. IPC is protected by the SSH user's private filesystem, not a network port. */
@@ -29,6 +36,7 @@ public final class TaskService {
     private PocketEngine engine(String id){
         return new PocketEngine(new PocketEngine.Host(){
             public String asset(String name)throws Exception{return TaskService.asset(name);}
+            public byte[] previewImage(byte[] bytes,int maxBytes)throws Exception{return TaskService.previewImage(bytes,maxBytes);}
             public boolean trust(String host,String fingerprint){return false;}
             public boolean durable(){return true;}
             public JSONObject agentConfig(String run)throws Exception{
@@ -74,6 +82,51 @@ public final class TaskService {
                 }
             }
         },new LocalTransport());
+    }
+    static byte[] previewImage(byte[] bytes,int maxBytes)throws IOException{
+        if(bytes==null||bytes.length==0||maxBytes<1)throw new IOException("图片预览参数无效");
+        if(bytes.length<=maxBytes)return bytes;
+        if(bytes.length>InputFiles.LIMIT)throw new IOException("图片超过 20MB，无法生成预览");
+        BufferedImage decoded=null,preview=null;ImageReader reader=null;
+        try(MemoryCacheImageInputStream input=new MemoryCacheImageInputStream(new ByteArrayInputStream(bytes))){
+            Iterator<ImageReader> readers=ImageIO.getImageReaders(input);
+            if(!readers.hasNext())throw new IOException("电脑端无法解码这张图片，请上传有效的 JPEG 或 PNG 图片");
+            reader=readers.next();reader.setInput(input,true,true);
+            int width=reader.getWidth(0),height=reader.getHeight(0);
+            if(width<1||height<1)throw new IOException("无法解码图片，请上传有效的图片文件");
+            if(width>32768||height>32768||(long)width*height>100000000L)throw new IOException("图片原始尺寸过大，请缩小图片后重试");
+            int sample=1;while((width+sample-1)/sample>1280||(height+sample-1)/sample>1280)sample*=2;
+            ImageReadParam parameters=reader.getDefaultReadParam();parameters.setSourceSubsampling(sample,sample,0,0);
+            decoded=reader.read(0,parameters);if(decoded==null)throw new IOException("无法解码图片，请重新上传有效的图片文件");
+            double scale=Math.min(1d,1280d/Math.max(decoded.getWidth(),decoded.getHeight()));
+            preview=previewCanvas(decoded,Math.max(1,(int)Math.round(decoded.getWidth()*scale)),Math.max(1,(int)Math.round(decoded.getHeight()*scale)));
+            decoded.flush();decoded=null;
+            while(true){
+                for(int quality:new int[]{85,70,55,40}){
+                    byte[] encoded=previewJpeg(preview,quality,maxBytes);if(encoded.length<=maxBytes)return encoded;
+                }
+                int edge=Math.max(preview.getWidth(),preview.getHeight());if(edge<=1)throw new IOException("图片预览无法压缩到传输大小限制");
+                double shrink=Math.max(1,edge*3/4)/(double)edge;
+                BufferedImage smaller=previewCanvas(preview,Math.max(1,(int)Math.round(preview.getWidth()*shrink)),Math.max(1,(int)Math.round(preview.getHeight()*shrink)));
+                preview.flush();preview=smaller;
+            }
+        }catch(IIOException invalid){throw new IOException("无法解码图片，请重新上传有效的图片文件",invalid);}
+        catch(OutOfMemoryError memory){throw new IOException("图片预览内存不足，请缩小图片后重试",memory);}
+        catch(RuntimeException invalid){throw new IOException("图片预览生成失败，请检查图片是否有效",invalid);}
+        finally{if(reader!=null)reader.dispose();if(decoded!=null)decoded.flush();if(preview!=null)preview.flush();}
+    }
+    private static BufferedImage previewCanvas(BufferedImage source,int width,int height){
+        BufferedImage result=new BufferedImage(width,height,BufferedImage.TYPE_INT_RGB);Graphics2D graphics=result.createGraphics();
+        try{graphics.setColor(Color.WHITE);graphics.fillRect(0,0,width,height);graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BILINEAR);graphics.drawImage(source,0,0,width,height,null);}
+        finally{graphics.dispose();}return result;
+    }
+    private static byte[] previewJpeg(BufferedImage image,int quality,int maxBytes)throws IOException{
+        Iterator<ImageWriter> writers=ImageIO.getImageWritersByFormatName("jpeg");if(!writers.hasNext())throw new IOException("电脑端缺少 JPEG 预览编码器");
+        ImageWriter writer=writers.next();ByteArrayOutputStream bytes=new ByteArrayOutputStream(Math.min(maxBytes,65536));
+        try(MemoryCacheImageOutputStream output=new MemoryCacheImageOutputStream(bytes)){
+            writer.setOutput(output);ImageWriteParam parameters=writer.getDefaultWriteParam();parameters.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);parameters.setCompressionQuality(quality/100f);
+            writer.write(null,new IIOImage(image,null,null),parameters);output.flush();return bytes.toByteArray();
+        }finally{writer.dispose();}
     }
     private static byte[] readAttachment(String path)throws IOException{
         Path source=Paths.get(path);if(!Files.isRegularFile(source)||Files.size(source)>20*1024*1024)throw new IOException("附件无法归档");
