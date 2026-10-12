@@ -38,7 +38,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\dev\agent-control\win
 
 本机当前 WLAN 地址为 `192.168.43.5/24`。上面的网段仅用于手机也位于该可信局域网的情况；使用 VPN 或更换网络时改为实际可信来源地址。安装脚本会显示 SSH 主机指纹，请在手机连接时核对。不要在聊天中发送登录密码或私钥。
 
-本机桌面桥接已在普通权限的用户会话中启动，状态 `ready=true`、`busy=false`，已发现 WorkBuddy、豆包、TeleAgent、DeepSeek Harness。当前后台运行，无需重复启动。重启或注销后，桌面模式从**普通权限、已登录且已解锁的桌面**运行 `windows/Start-Bridge.cmd`，并保持桥接和桌面会话运行。不要在管理员会话启动桌面桥接，避免与普通权限应用不匹配。安装目录为 `%ProgramData%\AgentControl\<当前用户 SID>\bin`。此前修改登录启动项的组合命令被自动审批拒绝，因此新共享目录的自动启动尚未配置。
+桌面模式从**普通权限、已登录且已解锁的桌面**运行 `windows/Start-Bridge.cmd`，并保持桥接和桌面会话运行。不要在管理员会话启动桌面桥接，避免与普通权限应用不匹配。安装目录为 `%ProgramData%\AgentControl\<当前用户 SID>\bin`。此前修改登录启动项的组合命令被自动审批拒绝，因此新共享目录的自动启动尚未配置。
 
 TeleAgent 的“仅 CLI”通过 SSH 启动临时后台，不依赖桌面辅助功能或鼠标控件。当前 SSH Windows 用户必须拥有有效的 TeleAgent 登录；受 Windows 保护的登录状态仅在进程内解密并经 stdin 初始化后台，明文不落盘。客户端请求全部访问 `127.0.0.1`，但后台监听 wildcard 地址；会话、消息等业务接口使用强制随机 HMAC 签名和 Basic 认证，不向手机提供后台端口或密钥。退出只终止自己的会话和后台并清理临时数据库。WorkBuddy CLI 仍需桌面保持登录、运行。
 

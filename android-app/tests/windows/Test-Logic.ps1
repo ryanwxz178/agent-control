@@ -5,6 +5,85 @@ $repo=(Resolve-Path "$PSScriptRoot\..\..\..").Path
 $profiles=Get-Content "$repo/windows/profiles.json" -Raw -Encoding UTF8 | ConvertFrom-Json
 $script:passed=0
 function Assert($Value,[string]$Name) { if (!$Value) { throw "FAIL: $Name" }; $script:passed++; Write-Output "PASS $Name" }
+# Read the installer predicate without running installation or touching live ACLs.
+$installSource=Get-Content "$repo/windows/Install.ps1" -Raw -Encoding UTF8
+$aclTokens=$null;$aclErrors=$null
+$installAst=[Management.Automation.Language.Parser]::ParseInput($installSource,[ref]$aclTokens,[ref]$aclErrors)
+$aclPredicate=$installAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-PrivateBridgeAcl'},$true)
+Assert ($aclErrors.Count -eq 0 -and $null -ne $aclPredicate) 'installer private ACL predicate parses independently of installation'
+Invoke-Expression $aclPredicate.Extent.Text
+$runningPredicate=$installAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-BridgeRunning'},$true)
+Assert ($null -ne $runningPredicate) 'installer running bridge predicate is extracted without launching a process'
+Invoke-Expression $runningPredicate.Extent.Text
+$bridgeLockFixture=Join-Path ([IO.Path]::GetTempPath()) ('orca-bridge-lock-test-'+[Guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($bridgeLockFixture)|Out-Null
+$bridgeLockPath=Join-Path $bridgeLockFixture 'broker.lock'
+$heldBridgeLock=$null
+try {
+    Assert (!(Test-BridgeRunning $bridgeLockFixture)) 'missing broker lock permits startup'
+    Assert (!(Test-Path -LiteralPath $bridgeLockPath)) 'running bridge probe does not create a missing lock'
+    [IO.File]::WriteAllText($bridgeLockPath,'lock fixture')
+    Assert (!(Test-BridgeRunning $bridgeLockFixture)) 'existing unlocked broker file permits startup'
+    Assert ([IO.File]::ReadAllText($bridgeLockPath) -eq 'lock fixture') 'running bridge probe preserves the lock file content'
+    $heldBridgeLock=[IO.File]::Open($bridgeLockPath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    Assert (Test-BridgeRunning $bridgeLockFixture) 'exclusive broker lock prevents duplicate startup'
+    $heldBridgeLock.Dispose();$heldBridgeLock=$null
+    Assert (!(Test-BridgeRunning $bridgeLockFixture)) 'released broker lock permits a later startup'
+} finally {
+    if ($null -ne $heldBridgeLock) { $heldBridgeLock.Dispose() }
+    if ([IO.File]::Exists($bridgeLockPath)) { [IO.File]::Delete($bridgeLockPath) }
+    # The fixture contains one file only; avoid a recursive directory cleanup.
+    [IO.Directory]::Delete($bridgeLockFixture,$false)
+}
+$fixtureUser='S-1-5-21-100-200-300-1001'
+$fixtureSid=[pscustomobject]@{Value=$fixtureUser}
+function New-BridgeAclFixture([string]$Descriptor) {
+    if ($env:OS -eq 'Windows_NT') {
+        $security=[Security.AccessControl.DirectorySecurity]::new()
+        $security.SetSecurityDescriptorSddlForm($Descriptor)
+        return $security
+    }
+    # Unix .NET does not construct Windows ACLs; preserve their public contract.
+    $owner=[regex]::Match($Descriptor,'^O:(.+?)D:').Groups[1].Value
+    $rules=@(foreach ($ace in [regex]::Matches($Descriptor,'\(([^)]+)\)')) {
+        $fields=$ace.Groups[1].Value.Split(';')
+        $inheritance=[Security.AccessControl.InheritanceFlags]::None
+        if ($fields[1].Contains('OI')) { $inheritance=$inheritance -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit }
+        if ($fields[1].Contains('CI')) { $inheritance=$inheritance -bor [Security.AccessControl.InheritanceFlags]::ContainerInherit }
+        $propagation=[Security.AccessControl.PropagationFlags]::None
+        if ($fields[1].Contains('IO')) { $propagation=$propagation -bor [Security.AccessControl.PropagationFlags]::InheritOnly }
+        if ($fields[1].Contains('NP')) { $propagation=$propagation -bor [Security.AccessControl.PropagationFlags]::NoPropagateInherit }
+        [pscustomobject]@{
+            IdentityReference=[pscustomobject]@{Value=$fields[5]}
+            IsInherited=$fields[1].Contains('ID')
+            AccessControlType=$(if ($fields[0] -eq 'A') { [Security.AccessControl.AccessControlType]::Allow } else { [Security.AccessControl.AccessControlType]::Deny })
+            FileSystemRights=$(if ($fields[2] -eq 'FA') { [Security.AccessControl.FileSystemRights]::FullControl } else { [Security.AccessControl.FileSystemRights]::ReadAndExecute })
+            InheritanceFlags=$inheritance;PropagationFlags=$propagation
+        }
+    })
+    $security=[pscustomobject]@{AreAccessRulesProtected=$Descriptor.Contains('D:P');FixtureOwner=[pscustomobject]@{Value=$owner};FixtureRules=$rules}
+    $security|Add-Member -MemberType ScriptMethod -Name GetOwner -Value {param($IdentityType) return $this.FixtureOwner}
+    $security|Add-Member -MemberType ScriptMethod -Name GetAccessRules -Value {param($Explicit,$Inherited,$IdentityType) return $this.FixtureRules}
+    return $security
+}
+$privateDescriptor="O:${fixtureUser}D:P(A;OICI;FA;;;$fixtureUser)(A;OICI;FA;;;S-1-5-18)"
+Assert (Test-PrivateBridgeAcl (New-BridgeAclFixture $privateDescriptor) $fixtureSid) 'existing private bridge ACL can be retained for a normal-user update'
+$unsafeDescriptors=@{
+    'additional Everyone allow'=$privateDescriptor+'(A;OICI;FA;;;S-1-1-0)'
+    'deny instead of user allow'=$privateDescriptor.Replace('D:P(A;','D:P(D;')
+    'missing object inheritance'=$privateDescriptor.Replace("(A;OICI;FA;;;$fixtureUser)","(A;CI;FA;;;$fixtureUser)")
+    'missing all SYSTEM inheritance'=$privateDescriptor.Replace('(A;OICI;FA;;;S-1-5-18)','(A;;FA;;;S-1-5-18)')
+    'inherit-only propagation'=$privateDescriptor.Replace("(A;OICI;FA;;;$fixtureUser)","(A;OICIIO;FA;;;$fixtureUser)")
+    'inherited rule'=$privateDescriptor.Replace('(A;OICI;FA;;;S-1-5-18)','(A;OICIID;FA;;;S-1-5-18)')
+    'unprotected DACL'=$privateDescriptor.Replace('D:P','D:')
+    'different owner'=$privateDescriptor.Replace("O:${fixtureUser}",'O:S-1-5-18')
+    'insufficient user rights'=$privateDescriptor.Replace("(A;OICI;FA;;;$fixtureUser)","(A;OICI;0x1200a9;;;$fixtureUser)")
+    'missing SYSTEM access'=$privateDescriptor.Replace('(A;OICI;FA;;;S-1-5-18)','')
+    'another user instead of SYSTEM'=$privateDescriptor.Replace(';;;S-1-5-18)',';;;S-1-5-21-100-200-300-1002)')
+}
+foreach ($case in $unsafeDescriptors.GetEnumerator()) {
+    Assert (!(Test-PrivateBridgeAcl (New-BridgeAclFixture $case.Value) $fixtureSid)) ("unsafe bridge ACL requires hardening: "+$case.Key)
+}
 Assert ((Get-OptionalUiValue $null $null) -eq '') 'missing .NET Framework UIA property does not abort snapshot'
 $emptyEditor=@{value="$([char]0xFEFF)`n今天帮你做些什么？@ 添加上下文，/调用技能与指令"}
 Assert ((Get-EditorValue $emptyEditor $profiles.workbuddy) -eq '') 'WorkBuddy UIA placeholder is an empty editor'

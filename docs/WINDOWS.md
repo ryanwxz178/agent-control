@@ -59,6 +59,8 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\
 
 更新源码后，在电脑空闲时关闭旧 Bridge 进程，重新运行 `windows/Install.ps1` 并启动新版 Bridge，再在手机重新连接。旧版桥接没有附件能力标记，新手机会拒绝向它提交文件消息。安装脚本会为已有 profiles.json 补入新增字段并保留用户配置。
 
+安装脚本会保留已符合要求的私有目录权限，普通权限会话可更新这种既有安装。如果旧 Bridge 仍持有 `broker.lock`，脚本只更新文件并提示关闭旧进程，不再启动重复实例。更新磁盘文件不会替换正在运行的桥接代码；必须重启后才会发布附件能力。若旧桥接以管理员权限启动，需从电脑使用具备权限的任务管理器结束对应 Bridge 进程，再从普通权限桌面运行 `windows/Start-Bridge.cmd`。
+
 ## 云电脑与 RDP
 
 - SSH 地址必须从手机可达。可使用同一私有网络、VPN / Tailscale 等已有网络，不要求同一个物理 Wi-Fi，也没有内置公网中继或自动穿透。
