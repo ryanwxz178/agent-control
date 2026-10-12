@@ -17,11 +17,14 @@ public final class InputFilesTest {
         assert !publicFile.has("path")&&!publicFile.has("computer");
         JSONObject outgoing=request(id);files.attach(outgoing,"pc|22|user");
         assert outgoing.getString("prompt").contains(".agent-control-input/");assert outgoing.getString("displayPrompt").equals("分析这个文件");assert outgoing.getJSONArray("inputFiles").length()==1;
-        assert outgoing.getString("accessMode").equals("cli");rejects(()->files.attach(request(id).put("accessMode","desktop"),"pc|22|user"));
+        assert outgoing.getString("accessMode").equals("cli");
+        JSONObject desktop=request(id).put("accessMode","desktop").put("historyUploads",new JSONArray().put("expired-old-file"));files.attach(desktop,"pc|22|user");
+        assert desktop.getString("accessMode").equals("desktop");assert desktop.getString("prompt").equals("分析这个文件");assert desktop.getJSONArray("desktopFiles").length()==1;assert desktop.getJSONArray("desktopFiles").getJSONObject(0).getString("path").endsWith("uuid-报告.pdf");
+        JSONObject desktopFollowup=request().put("accessMode","desktop").put("historyUploads",new JSONArray().put(id));files.attach(desktopFollowup,"pc|22|user");assert !desktopFollowup.has("desktopFiles")&&!desktopFollowup.has("inputFiles");assert desktopFollowup.getString("prompt").equals("分析这个文件");
         JSONObject followup=request().put("historyUploads",new JSONArray().put(id));files.attach(followup,"pc|22|user");assert followup.getString("prompt").contains(".agent-control-input/");assert followup.getJSONArray("uploadFiles").length()==0;
         rejects(()->files.attach(request(id),"other|22|user"));rejects(()->files.attach(request(id).put("directory","D:/other"),"pc|22|user"));
         rejects(()->files.attach(request("forged"),"pc|22|user"));rejects(()->files.attach(request(id,id),"pc|22|user"));
-        JSONObject forged=request().put("inputFiles",new JSONArray().put(new JSONObject().put("path","C:/secret")));files.attach(forged,"pc|22|user");assert !forged.has("inputFiles");
+        JSONObject forged=request().put("inputFiles",new JSONArray().put(new JSONObject().put("path","C:/secret"))).put("desktopFiles",new JSONArray().put(new JSONObject().put("path","C:/secret")));files.attach(forged,"pc|22|user");assert !forged.has("inputFiles")&&!forged.has("desktopFiles");
         InputFiles restored=new InputFiles();restored.restore(files.save());restored.attach(request(id),"pc|22|user");
         restored.remove(id);rejects(()->restored.attach(request(id),"pc|22|user"));
         String first=files.add(file("large1.pdf",InputFiles.LIMIT)).getString("id"),second=files.add(file("large2.pdf",InputFiles.LIMIT)).getString("id"),third=files.add(file("large3.pdf",InputFiles.LIMIT)).getString("id");

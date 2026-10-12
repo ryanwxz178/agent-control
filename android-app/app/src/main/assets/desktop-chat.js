@@ -28,10 +28,10 @@ function snapshot(root,quiet){
    for(var ancestor=parent;ancestor;ancestor=ancestor.parent){if(raw.isEqual(ancestor.raw)){cycle=true;break;}}
    if(cycle)continue;
    var role=string(raw,'AXRole'),embedded=request.app==='TeleAgent'&&role==='AXWebArea'&&entry.webArea;
-   var node={raw:raw,role:role,parent:parent,children:[],name:'',description:'',value:''};
-   if(/AXButton|AXRadioButton|AXStaticText|AXTextArea|AXTextField|AXGroup|AXWebArea|AXDialog|AXSheet|AXWindow|AXImage|AXLink/.test(role)){
+    var node={raw:raw,role:role,parent:parent,children:[],name:'',description:'',value:''};
+   if(/AXButton|AXRadioButton|AXMenuItem|AXStaticText|AXTextArea|AXTextField|AXComboBox|AXRow|AXCell|AXGroup|AXWebArea|AXDialog|AXSheet|AXWindow|AXImage|AXLink/.test(role)){
     node.name=string(raw,'AXTitle');node.description=string(raw,'AXDescription');
-    if(/AXStaticText|AXTextArea|AXTextField/.test(role))node.value=string(raw,'AXValue');
+    if(/AXStaticText|AXTextArea|AXTextField|AXComboBox|AXCell/.test(role))node.value=string(raw,'AXValue');
    }
    flat.push(node);if(parent)parent.children.push(node);
    if(embedded){node.opaque=true;continue;}
@@ -502,6 +502,142 @@ function resumeDesktopConversation(nodes,state){
   fail('电脑原对话的请求标识或会话记录未通过校验，未发送；不会新建对话。');
  }
 }
+// Uploads are current-turn native registry paths. A filename in ordinary chat text
+// is never evidence that the desktop app accepted an attachment.
+function macInputFiles(files){
+ if(files===undefined||files===null)return [];
+ if(!Array.isArray(files)||files.length>4)throw Error('桌面附件数量无效，未发送消息');
+ var total=0,seen={};return files.map(function(file){
+  var path=file&&file.path,size=file&&file.size;
+  if(typeof path!=='string'||path[0]!=='/'||/[\u0000-\u001f]/.test(path)||/(?:^|\/)\.\.?(?:\/|$)/.test(path)||!(/\/\.agent-control-input\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[^/]+$/).test(path)||seen[path])throw Error('桌面附件路径无效，未发送消息');
+  if(typeof size!=='number'||!isFinite(size)||Math.floor(size)!==size||size<0||size>20*1024*1024)throw Error('桌面附件大小无效，未发送消息');
+  seen[path]=true;total+=size;if(total>40*1024*1024)throw Error('本条消息的附件不能超过 40MB，未发送消息');
+  return {path:path,basename:path.slice(path.lastIndexOf('/')+1),size:size,name:file.name||path.slice(path.lastIndexOf('/')+1)};
+ });
+}
+function macAttachLabel(n){return /^(上传文件|上传附件|添加文件|添加附件|添加文件和图片|添加图片和文件|附件|Attach files?|Add files?|Add attachment|Upload files?|Add photos and files)$/i.test(normalize(title(n)));}
+function macRemoveFile(n){return button(n)&&/^(删除(?:文件|附件)?|移除(?:文件|附件)?|Remove(?: file| attachment)?|Delete(?: file| attachment)?)(?:[ :：].*)?$|^关闭附件$/i.test(normalize(title(n)));}
+function macFileText(n,name){return [n.name,n.description,n.value].some(function(value){return typeof value==='string'&&value.trim()===name;});}
+function macComposerFileScope(input){
+ for(var scope=input.parent;scope;scope=scope.parent){
+  if(/^(AXWindow|AXDialog|AXSheet)$/.test(scope.role))break;
+  var parts=descendants(scope),fields=parts.filter(function(n){return n.role==='AXTextArea';});
+  if(fields.length!==1||!fields[0].raw.isEqual(input.raw))break;
+  // A transcript parent must not turn historical files into composer attachments.
+  if(parts.some(function(n){return !inEditor(n)&&(button(n)&&/^(复制|Copy|朗读|仅复制文本|带格式复制)$/.test(title(n))||n.role==='AXStaticText'&&/\[Agent Control request /.test(n.value||n.name||''));}))break;
+  var entries=parts.filter(function(n){return button(n)&&macAttachLabel(n);});
+  if(entries.length===1)return {scope:scope,parts:parts,entry:entries[0]};
+  if(entries.length>1)throw Error('电脑附件入口不唯一，未发送消息；请先在电脑检查附件草稿');
+ }
+ throw Error('该桌面 APP 未提供可识别的文件上传入口，未发送消息；可改用 CLI 接入');
+}
+function macAttachmentCards(composer,files){
+ var cards=[];files.forEach(function(file){
+  var names=composer.parts.filter(function(n){return !inEditor(n)&&macFileText(n,file.basename);}),found=[];
+  names.forEach(function(n){for(var card=n;card&&card!==composer.scope;card=card.parent){
+   if(descendants(card).some(macRemoveFile)){if(!found.some(function(c){return c.raw.isEqual(card.raw);}))found.push(card);break;}
+  }});
+  if(found.length!==1)return;
+  // One broad wrapper containing all files cannot prove each file has its own card.
+  if(files.some(function(other){return other!==file&&descendants(found[0]).some(function(n){return macFileText(n,other.basename);});}))return;
+  cards.push({file:file,card:found[0]});
+ });return cards;
+}
+function macAttachmentState(composer,files){
+ var failed=composer.parts.some(function(n){return !inEditor(n)&&/上传失败|文件过大|文件类型不支持|不支持的文件|Upload failed|Unsupported file|File too large/i.test(n.value||n.name||n.description||'');});
+ if(failed)return 'error';
+ var pending=composer.parts.some(function(n){return n.role==='AXProgressIndicator'||!inEditor(n)&&/正在上传|上传中|正在处理文件|文件处理中|Uploading|Processing file/i.test(n.value||n.name||n.description||'');});
+ var cards=macAttachmentCards(composer,files),removers=composer.parts.filter(macRemoveFile);
+ // Reject additional PC attachments, including additions while our upload waits.
+ if(removers.length>files.length||cards.length===files.length&&removers.length!==files.length)return 'changed';
+ return !pending&&cards.length===files.length?'ready':'pending';
+}
+function macOpenFileDialog(nodes){
+ var candidates=nodes.filter(function(n){return /^(AXSheet|AXDialog)$/.test(n.role)||n.role==='AXWindow'&&string(n.raw,'AXSubrole')==='AXDialog';}).map(function(scope){
+  var parts=descendants(scope),open=parts.filter(function(n){return button(n)&&/^(打开|选择|选取|Open|Choose)$/i.test(normalize(title(n)));});
+  return {scope:scope,parts:parts,open:open.length===1?open[0]:null};
+ }).filter(function(dialog){return dialog.open&&dialog.parts.some(function(n){return /^(AXBrowser|AXOutline|AXTable)$/.test(n.role);});});
+ candidates=candidates.filter(function(dialog){return !candidates.some(function(other){return other!==dialog&&descendants(dialog.scope).indexOf(other.scope)>=0;});});
+ return candidates.length===1?candidates[0]:null;
+}
+function macGoToDialog(nodes){
+ var candidates=nodes.filter(function(n){return /^(AXSheet|AXDialog)$/.test(n.role)||n.role==='AXWindow'&&string(n.raw,'AXSubrole')==='AXDialog';}).map(function(scope){
+  var parts=descendants(scope),go=parts.filter(function(n){return button(n)&&/^(前往|Go)$/i.test(normalize(title(n)));}),fields=parts.filter(function(n){return /^(AXTextField|AXComboBox)$/.test(n.role);});
+  // Some native Go to Folder fields expose both a combo and its child text field.
+  fields=fields.filter(function(field){return !fields.some(function(other){return other!==field&&descendants(field).indexOf(other)>=0;});});
+  return {scope:scope,go:go.length===1?go[0]:null,field:fields.length===1?fields[0]:null};
+ }).filter(function(dialog){return dialog.go&&dialog.field;});
+ candidates=candidates.filter(function(dialog){return !candidates.some(function(other){return other!==dialog&&descendants(dialog.scope).indexOf(other.scope)>=0;});});
+ return candidates.length===1?candidates[0]:null;
+}
+function macChosenFile(dialog,file){
+ var selected=dialog.parts.filter(function(n){return /^(AXRow|AXCell|AXImage)$/.test(n.role)&&/^(1|true)$/.test(string(n.raw,'AXSelected'));});
+ selected=selected.filter(function(n){return !selected.some(function(parent){return parent!==n&&descendants(parent).indexOf(n)>=0;});});
+ return selected.length===1&&descendants(selected[0]).some(function(n){return macFileText(n,file.basename);});
+}
+function macFileContext(root,input,window,existing){
+ if(!isFrontmost(application))fail('目标应用焦点已改变，未发送消息；请先在电脑检查附件草稿');
+ var nodes=snapshot(root);
+ if(!nodes[0].raw.isEqual(window)||busy(nodes))fail('电脑窗口或任务状态已改变，未发送消息；请先在电脑检查附件草稿');
+ input=receivingEditor(nodes,input);
+ if(string(input.raw,'AXValue')!==existing)fail('电脑输入框被修改，未发送消息；请先在电脑检查附件草稿');
+ return {nodes:nodes,input:input,composer:macComposerFileScope(input)};
+}
+function attachMacInputFiles(root,input,files){
+ if(!files.length){
+  var plainComposer;try{plainComposer=macComposerFileScope(input);}catch(_){return input;}
+  if(plainComposer.parts.some(macRemoveFile))fail('电脑输入框已有附件草稿，未发送消息；请先在电脑处理已有附件');
+  return input;
+ }
+ var window=snapshot(root)[0].raw,existing=string(input.raw,'AXValue'),state=macFileContext(root,input,window,existing);
+ DesktopSession.checkDraft(editorDraft(state.input),'',false);
+ if(state.composer.parts.some(macRemoveFile))fail('电脑输入框已有附件草稿，未追加或发送；请先在电脑处理已有附件');
+ files.forEach(function(file,index){
+  var attrs=$.NSFileManager.defaultManager.attributesOfItemAtPathError($(file.path),null);
+  if(!attrs||String(ObjC.unwrap(attrs.objectForKey($.NSFileType)))!==String(ObjC.unwrap($.NSFileTypeRegular))||Number(attrs.objectForKey($.NSFileSize))!==file.size)fail('电脑上的上传文件已改变或无法读取，未发送消息；请重新上传');
+  emit('status','正在向 '+request.app+' 添加附件：'+file.name);
+  state=macFileContext(root,state.input,window,existing);
+  if($.AXUIElementPerformAction(state.composer.entry.raw,$('AXPress'))!==0)fail('电脑附件入口无法操作，未发送消息');
+  var until=Date.now()+6000,dialog=null;
+  do{delay(0.2);if(!isFrontmost(application))fail('电脑焦点已改变，未操作文件选择框');dialog=macOpenFileDialog(snapshot(root));}while(!dialog&&Date.now()<until);
+  if(!dialog)fail('未找到该 APP 的唯一系统文件选择框，未发送消息；请先在电脑检查附件草稿');
+  Application('System Events').keystroke('g',{using:['command down','shift down']});
+  var go=null;until=Date.now()+4000;
+  do{delay(0.2);if(!isFrontmost(application))fail('电脑焦点已改变，未输入附件路径');go=macGoToDialog(snapshot(root));}while(!go&&Date.now()<until);
+  if(!go)fail('无法识别系统文件选择框的路径输入区，未发送消息');
+  if($.AXUIElementSetAttributeValue(go.field.raw,$('AXFocused'),$(true))!==0)fail('系统路径输入区无法确认焦点，未输入附件路径');
+  var focusUntil=Date.now()+2000;while(!/^(1|true)$/.test(string(go.field.raw,'AXFocused'))&&Date.now()<focusUntil)delay(0.1);
+  if(!/^(1|true)$/.test(string(go.field.raw,'AXFocused'))||!isFrontmost(application))fail('系统路径输入区无法确认焦点，未输入附件路径');
+  if($.AXUIElementSetAttributeValue(go.field.raw,$('AXValue'),$(file.path))!==0||string(go.field.raw,'AXValue')!==file.path)fail('系统附件路径输入校验失败，未选择文件');
+  if(!isFrontmost(application)||!/^(1|true)$/.test(string(go.field.raw,'AXFocused')))fail('电脑焦点已改变，未选择文件');
+  if($.AXUIElementPerformAction(go.go.raw,$('AXPress'))!==0)fail('系统附件路径导航失败，未选择文件');
+  until=Date.now()+6000;dialog=null;
+  do{delay(0.2);if(!isFrontmost(application))fail('电脑焦点已改变，未确认文件选择');var selectedNodes=snapshot(root);if(!macGoToDialog(selectedNodes))dialog=macOpenFileDialog(selectedNodes);}while((!dialog||!macChosenFile(dialog,file))&&Date.now()<until);
+  if(!dialog||!macChosenFile(dialog,file)||!/^(1|true)$/.test(string(dialog.open.raw,'AXEnabled')))fail('未确认系统选择了本次上传的唯一文件，未发送消息');
+  if($.AXUIElementPerformAction(dialog.open.raw,$('AXPress'))!==0)fail('系统文件选择失败，未发送消息');
+  until=Date.now()+30000;var attached=false;
+  do{
+   delay(0.3);if(!isFrontmost(application))fail('电脑焦点已改变，未发送消息；请先在电脑检查附件草稿');
+   var current=snapshot(root);if(macOpenFileDialog(current)||macGoToDialog(current))continue;
+   state=macFileContext(root,state.input,window,existing);var status=macAttachmentState(state.composer,files.slice(0,index+1));
+   if(status==='error')fail('桌面 APP 拒绝了附件，未发送消息；请先在电脑检查文件类型、大小及附件草稿');
+   if(status==='changed')fail('电脑附件草稿出现了其他文件或控件，未发送消息；请先在电脑检查附件草稿');
+   if(status==='ready'){attached=true;break;}
+  }while(Date.now()<until);
+  if(!attached)fail('未确认附件在桌面输入框中准备完成，未发送消息；请先在电脑检查附件草稿');
+ });
+ return state.input;
+}
+function verifyMacInputFiles(nodes,input,files){
+ var current=receivingEditor(nodes,input),composer;
+ if(!files.length){
+  try{composer=macComposerFileScope(current);}catch(_){return;}
+  if(composer.parts.some(macRemoveFile))fail('电脑输入框出现附件草稿，未发送消息；请先在电脑处理已有附件');
+  return;
+ }
+ composer=macComposerFileScope(current);
+ if(macAttachmentState(composer,files)!=='ready')fail('发送前附件校验失败，未发送消息；请先在电脑检查附件草稿');
+}
 function checkpointDesktopConversation(status,binding){
  if(!conversationPath)return;
  conversationState.status=status;conversationState.binding=binding||conversationState.binding||null;
@@ -562,6 +698,10 @@ var fields=blank.filter(function(n){return n.role==='AXTextArea';});
 if(fields.length!==1)fail('无法唯一识别聊天输入框，未发送消息。');
 var input=fields[0],existing=input.value;
 if(existing&&existing.trim()&&!/发消息|今天帮你|有什么|Message|Ask/.test(existing))fail('输入框有草稿，未覆盖。');
+var inputFiles;
+try{inputFiles=macInputFiles(request.files);}catch(fileError){fail(String(fileError.message||fileError));}
+input=attachMacInputFiles(root,input,inputFiles);
+existing=string(input.raw,'AXValue');
 var baseline=text(blank);
 conversationState={version:1,app:request.app,conversationId:request.conversationId,prompt:request.prompt,status:'pending',navigation:previousConversation&&previousConversation.navigation||null};
 
@@ -592,9 +732,10 @@ var written='',system=Application('System Events');
 }
 if(!isFrontmost(application)||!/^(1|true)$/.test(string(input.raw,'AXFocused')))fail('电脑焦点已改变，未发送消息。');
 if(normalize(written)!==normalize(request.prompt))fail('输入内容校验失败，未发送消息。');
-// Persist uncertainty immediately before sending, after draft/content checks.
-writeDesktopConversation(conversationPath,conversationState);
 var ready=snapshot(root),sendButtons=ready.filter(function(n){return button(n)&&(request.app==='TeleAgent'?title(n)==='运行':/^(发送|Send|发送消息)$/.test(title(n)));});
+verifyMacInputFiles(ready,input,inputFiles);
+// Persist uncertainty immediately before sending, after draft/content/file checks.
+writeDesktopConversation(conversationPath,conversationState);
 if(sendButtons.length===1){
  if(!/^(1|true)$/.test(string(sendButtons[0].raw,'AXEnabled')))fail('消息已填入，但发送按钮未启用。未发送，请检查电脑端模型或输入框。');
  if(request.app==='DeepSeek Harness')keyboardActivate(sendButtons[0],application);

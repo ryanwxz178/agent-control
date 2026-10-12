@@ -51,6 +51,14 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\
 
 快照可能含当前聊天内容，只应保存在本机，分享前脱敏。如果 Electron 应用未暴露控件，先按该应用支持的方法启用辅助功能；本次 WorkBuddy 和豆包需要同时使用 `--force-renderer-accessibility=complete --enable-features=UiaProvider` 启动，默认 profiles.json 已包含这两个参数。参数只在启动新进程时生效；应用已经运行时需先确认无重要任务，再退出后按参数启动。不要中断已有任务来重启应用。识别失败时适配器停止，不使用猜测坐标或盲目回车。普通权限桥接不能保证操作提升权限的窗口；保持应用与桥接权限等级一致。
 
+## 手机附件与桌面 APP
+
+手机输入区的回形针可在「直接桌面」模式选择文件。请先选择一个具体 Agent；桌面附件消息不会走多 Agent 自动调度。文件先经 SSH 上传到工作目录的 `.agent-control-input`，随后桥接操作该 APP 的附件入口、系统文件选择框，确认附件准备完成后发送。后续文字消息不再次添加历史附件。
+
+当前 Windows 适配依据 WorkBuddy 5.7.7 的「添加文件 → 本地文件」菜单和输入框文件标签实现；缺少相应控件的 APP 会提示尚未发送。文件类型还须满足 WorkBuddy 的限制。如果附件添加失败或中途断开，请在电脑检查输入框草稿，不要自动重复发送。
+
+更新源码后，在电脑空闲时关闭旧 Bridge 进程，重新运行 `windows/Install.ps1` 并启动新版 Bridge，再在手机重新连接。旧版桥接没有附件能力标记，新手机会拒绝向它提交文件消息。安装脚本会为已有 profiles.json 补入新增字段并保留用户配置。
+
 ## 云电脑与 RDP
 
 - SSH 地址必须从手机可达。可使用同一私有网络、VPN / Tailscale 等已有网络，不要求同一个物理 Wi-Fi，也没有内置公网中继或自动穿透。

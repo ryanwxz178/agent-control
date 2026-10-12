@@ -28,7 +28,7 @@ function Find-Apps {
             }
         }
         $path=$candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) -and [IO.Path]::GetExtension($_) -eq '.exe' } | Select-Object -First 1
-        if ($path) { $found+= @{id=$id;path=[IO.Path]::GetFullPath($path)} }
+        if ($path) { $found+= @{id=$id;path=[IO.Path]::GetFullPath($path);fileUploads=($Adapter.fileUploads -eq $true)} }
     }
     return $found
 }
@@ -37,7 +37,7 @@ function Save-Status {
         $script:apps=@(Find-Apps); $script:lastInventory=[DateTime]::UtcNow
     }
     $reason=Get-DesktopHealth
-    $status=@{protocol=1;brokerId=$brokerId;userSid=$sid;sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;updatedUtc=[DateTime]::UtcNow.ToString('o');ready=(!$reason);reason=$reason;busy=[bool]$script:activeId;apps=@($script:apps)}
+    $status=@{protocol=1;fileUploads=$true;brokerId=$brokerId;userSid=$sid;sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;updatedUtc=[DateTime]::UtcNow.ToString('o');ready=(!$reason);reason=$reason;busy=[bool]$script:activeId;apps=@($script:apps)}
     [IO.File]::WriteAllText("$Root\status.tmp",($status|ConvertTo-Json -Depth 5 -Compress),$utf8)
     for ($attempt=0; $attempt -lt 5; $attempt++) {
         try {
@@ -79,7 +79,7 @@ try {
                 if ($app.Count -ne 1 -or !$profiles.($r.app)) { throw '未知或未安装的桌面应用' }
                 Pulse
                 if($r.operation -eq 'endConversation'){Invoke-EndDesktopConversation $app[0] $profiles.($r.app) $r.conversationId}
-                else{Invoke-DesktopChat $app[0] $profiles.($r.app) $r.prompt $r.conversationId}
+                else{Invoke-DesktopChat $app[0] $profiles.($r.app) $r.prompt $r.conversationId $r.files}
             } catch { Write-Event 'error' $_.Exception.Message }
             finally {
                 $events.Dispose(); $events=$null

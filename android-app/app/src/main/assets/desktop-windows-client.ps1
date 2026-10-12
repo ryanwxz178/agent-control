@@ -33,10 +33,12 @@ try {
     $status = Read-Broker
     if ($status.busy) { throw 'Windows 桌面正在执行其他任务，请完成后再发送。' }
     $request = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__REQUEST_BASE64__')) | ConvertFrom-Json
+    $requestFiles=@();if($null -ne $request.files){$requestFiles=@($request.files)}
+    if ($requestFiles.Count -gt 0 -and !$status.fileUploads) { throw '电脑上的 Windows 桌面桥接需要更新并重启，才能添加手机上传的附件；本条消息尚未发送。' }
     if ($request.app -notin @($status.apps.id)) { throw '当前桌面桥接没有检测到该应用，请在手机重新连接。' }
-    $body = @{protocol=1; id=$id; app=$request.app; prompt=$request.prompt; conversationId=$request.conversationId; brokerId=$status.brokerId; createdUtc=[DateTime]::UtcNow.ToString('o')}
+    $body = @{protocol=1; id=$id; app=$request.app; prompt=$request.prompt; conversationId=$request.conversationId; files=$requestFiles; brokerId=$status.brokerId; createdUtc=[DateTime]::UtcNow.ToString('o')}
     [IO.File]::WriteAllText($lease,'',$utf8)
-    [IO.File]::WriteAllText("$root\$id.tmp",($body | ConvertTo-Json -Compress),$utf8)
+    [IO.File]::WriteAllText("$root\$id.tmp",($body | ConvertTo-Json -Depth 8 -Compress),$utf8)
     [IO.File]::Move("$root\$id.tmp","$root\$id.request")
     $start = [DateTime]::UtcNow
     $reader = $null

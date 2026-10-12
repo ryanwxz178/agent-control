@@ -45,6 +45,60 @@ function Test-ReplyDecoration($Node,$Nodes,$Adapter) {
     }
     return $false
 }
+function Get-ComposerFileTags($Nodes,$Editor,$Adapter) {
+    if (!$Adapter.fileTagClass) { return @() }
+    return @($Nodes | Where-Object { $_.className -match $Adapter.fileTagClass -and (Test-Descendant $_ $Editor.index $Nodes) })
+}
+function Test-WithinFileTag($Node,$Nodes,$Adapter) {
+    if (!$Adapter.fileTagClass) { return $false }
+    [int]$at=$Node.index;$hops=0
+    while($at -ge 0) {
+        if(++$hops -gt $Nodes.Count -or $at -ge $Nodes.Count){throw '附件控件父节点链无效'}
+        if($Nodes[$at].className -match $Adapter.fileTagClass){return $true}
+        $at=$Nodes[$at].parent
+    }
+    return $false
+}
+function Get-ComposerPlainText($Nodes,$Editor,$Adapter) {
+    # File attachments are inline tokens in WorkBuddy's editor. Never erase them with Ctrl+A.
+    $parts=@($Nodes | Where-Object { $_.role -eq 'Text' -and (Test-Descendant $_ $Editor.index $Nodes) -and !(Test-WithinFileTag $_ $Nodes $Adapter) })
+    return ($parts | ForEach-Object { $_.name }) -join ''
+}
+function Test-ComposerPrompt($Nodes,$Editor,$Adapter,[string]$Prompt) {
+    # UIA inserts zero-width caret leaves around Slate inline attachment tokens.
+    # Preserve internal spaces/newlines so an edited instruction cannot satisfy this check.
+    $actual=(Get-ComposerPlainText $Nodes $Editor $Adapter) -replace '[\u200B\u200C\u200D\u2060\uFEFF]',''
+    return (($actual -replace "`r`n","`n").Trim() -ceq ($Prompt -replace "`r`n","`n").Trim())
+}
+function Test-ComposerFilesReady($Nodes,$Editor,$Adapter,$Files) {
+    $tags=@(Get-ComposerFileTags $Nodes $Editor $Adapter)
+    if($tags.Count -ne @($Files).Count){return $false}
+    $seen=@{}
+    foreach($tag in $tags) {
+        if($Adapter.filePendingClass -and $tag.className -match $Adapter.filePendingClass){return $false}
+        $parts=@($Nodes | Where-Object { $_.role -eq 'Text' -and (Test-Descendant $_ $tag.index $Nodes) })
+        $label=($parts | ForEach-Object { $_.name }) -join ''
+        $matching=@($Files | Where-Object { [IO.Path]::GetFileName($_.path) -ceq $label })
+        if($matching.Count -ne 1 -or $seen.ContainsKey($label)){return $false}
+        $seen[$label]=$true
+    }
+    return $true
+}
+function Get-FileDialogControls($Nodes) {
+    $hosts=@($Nodes | Where-Object { $_.role -in @('ComboBox','Pane','Group') -and $_.automationId -in @('1148','FileNameControlHost') -and $_.enabled -and !$_.offscreen })
+    if($hosts.Count) {
+        $edits=@($Nodes | Where-Object {
+            if($_.role -ne 'Edit' -or !$_.enabled -or $_.offscreen){return $false}
+            $edit=$_
+            return @($hosts | Where-Object { Test-Descendant $edit $_.index $Nodes }).Count -gt 0
+        })
+    } else {
+        $edits=@($Nodes | Where-Object { $_.role -eq 'Edit' -and $_.automationId -eq '1148' -and $_.enabled -and !$_.offscreen })
+    }
+    $opens=@($Nodes | Where-Object { $_.role -eq 'Button' -and $_.automationId -eq '1' -and $_.name -match '^(打开|Open)(?:\(&?O\))?$' -and $_.enabled -and !$_.offscreen })
+    if($edits.Count -ne 1 -or $opens.Count -ne 1){throw '无法唯一识别目标文件窗口的文件名和打开控件，未发送'}
+    return @{edit=$edits[0];open=$opens[0]}
+}
 function Get-ChatScope($Nodes, $Adapter) {
     $editors = @($Nodes | Where-Object { $_.role -eq 'Edit' -and $_.enabled -and !$_.offscreen -and (!$Adapter.editorId -or $_.automationId -eq $Adapter.editorId) })
     if ($editors.Count -ne 1) { throw '无法唯一识别聊天输入框。请关闭弹窗，或在 profiles.json 配置 editorId；Electron 应用可能需要开启辅助功能支持。' }
@@ -108,6 +162,8 @@ function Get-ReplyState($Nodes, $Adapter, [string]$Prompt) {
     return @{ sent=$true; complete=(!$busy -and ![string]::IsNullOrWhiteSpace($reply)); text=$reply; busy=$busy }
 }
 function Test-MessageText($Node,$Nodes,$Adapter,[int]$Scope,$Copies) {
+    # Attached file labels are not part of the exact request marker/prompt.
+    if(Test-WithinFileTag $Node $Nodes $Adapter){return $false}
     if(!$Adapter.messageCopyScope){return $true}
     [int]$at=$Node.parent;$hops=0
     while($at -ge 0 -and $at -ne $Scope){

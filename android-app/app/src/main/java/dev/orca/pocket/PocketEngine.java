@@ -146,16 +146,18 @@ final class PocketEngine {
                 boolean write=request.optBoolean("write"), desktop=true, hostPermissions=request.optBoolean("hostPermissions");
                 String mode=request.optString("accessMode","auto");
                 boolean hasFiles=request.optJSONArray("inputFiles")!=null&&request.getJSONArray("inputFiles").length()>0;
-                if(hasFiles&&mode.equals("desktop"))throw new IllegalArgumentException("文件对话需要使用可读取本地文件的 CLI Agent，请切换接入方式");
+                JSONArray desktopFiles=request.optJSONArray("desktopFiles");
+                if(hasFiles&&mode.equals("desktop")&&(desktopFiles==null||desktopFiles.length()==0))throw new IllegalArgumentException("桌面附件引用缺失，请重新选择文件");
+                if(hasFiles&&mode.equals("desktop")&&id.equals("auto"))throw new IllegalArgumentException("带附件的桌面对话请先选择一个 Agent");
                 if(!mode.equals("auto")&&!mode.equals("desktop")&&!mode.equals("cli"))throw new IllegalArgumentException("未知接入方式");
                 String context=history.isEmpty()?prompt:"当前任务：\n"+prompt+"\n\n此前对话（仅供上下文）：\n"+history;
                 String directory=request.optString("directory",profile.optString("directory"));
                 if(!Agent.absoluteDirectory(directory,inventory.os))throw new IllegalArgumentException("工作目录须为电脑上的绝对路径：Windows 如 C:\\Users\\你的用户名\\project，macOS/Linux 如 /Users/name/project");
-                TaskRouter.Runner runner=(a,text,allowWrite,label)->runAgent(a,text,allowWrite,label,directory,!mode.equals("cli")&&!hasFiles,hostPermissions,request.optString("conversationId"),id.equals("auto")?text:prompt);
+                TaskRouter.Runner runner=(a,text,allowWrite,label)->runAgent(a,text,allowWrite,label,directory,!mode.equals("cli")&&(!hasFiles||mode.equals("desktop")),hostPermissions,request.optString("conversationId"),id.equals("auto")?text:prompt,desktopFiles);
                 if(id.equals("auto")){
                     List<Agent> eligible=new ArrayList<>();
                     for(Agent a:inventory.agents.values()){
-                        if(!a.supported()||(hasFiles&&a.desktop()))continue;
+                        if(!a.supported()||(hasFiles&&!mode.equals("desktop")&&a.desktop()))continue;
                         if(mode.equals("desktop")){a=inventory.desktopAgent(a.id);if(a==null)continue;}
                         if(mode.equals("cli")&&a.desktop())continue;
                         if(!a.kind.equals("dsh")||hostPermissions)eligible.add(a);
@@ -164,7 +166,7 @@ final class PocketEngine {
                 }else{
                     Agent agent=inventory.agents.get(id);
                     if(agent==null)throw new IllegalArgumentException("该 Agent 不在当前电脑的安装列表中");
-                    agent=chooseAccess(inventory,agent,hasFiles?"cli":mode);
+                    agent=chooseAccess(inventory,agent,hasFiles&&!mode.equals("desktop")?"cli":mode);
                     runner.run(agent,context,write,"回复");
                 }
             }catch(EventDecoder.DesktopEnded e){emit("notice","message","原桌面会话已确认结束。");}
@@ -173,7 +175,7 @@ final class PocketEngine {
             finally{busy.set(false);emit("busy","value",false);if(!ssh.connected())emit("connection","status","连接已断开");}
         });
     }
-    private String runAgent(Agent a,String prompt,boolean write,String label,String directory,boolean desktop,boolean hostPermissions,String conversationId,String currentPrompt)throws Exception{
+    private String runAgent(Agent a,String prompt,boolean write,String label,String directory,boolean desktop,boolean hostPermissions,String conversationId,String currentPrompt,JSONArray desktopFiles)throws Exception{
         if(cancelled.get())throw new CancellationException();
         String run=UUID.randomUUID().toString();
         final String desktopPrompt=(conversationId.isEmpty()?prompt:currentPrompt)+"\n\n[Agent Control request "+run+"]";
@@ -201,7 +203,7 @@ final class PocketEngine {
                 synchronized(desktopLock){
                     if(cancelled.get())throw new CancellationException();
                     if(inventory.os.equals("Windows")){
-                        String payload=new JSONObject().put("app",a.command.get(0)).put("prompt",desktopPrompt).put("conversationId",conversationId).toString();
+                        String payload=new JSONObject().put("app",a.command.get(0)).put("prompt",desktopPrompt).put("conversationId",conversationId).put("files",desktopFiles==null?new JSONArray():desktopFiles).toString();
                         String script=host.asset("desktop-windows-client.ps1").replace("__REQUEST_BASE64__",Base64.getEncoder().encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
                         ssh.runWindowsScript(script,decoder::accept,cancelled,650000);
                     }else{
@@ -210,7 +212,7 @@ final class PocketEngine {
                         desktopRuns.entrySet().removeIf(entry->entry.getValue().optString("app").equals(a.command.get(0)));
                         if(desktopRuns.size()>=8)desktopRuns.clear();desktopViews.clear();desktopRuns.put(run,context);
                         host.event("desktopAvailable",new JSONObject().put("id",run).put("agent",a.name));
-                        String script=host.asset("desktop-session.js")+"\n"+host.asset("desktop-chat.js").replace("__REQUEST__",new JSONObject().put("app",a.command.get(0)).put("prompt",desktopPrompt).put("conversationId",conversationId).toString());
+                        String script=host.asset("desktop-session.js")+"\n"+host.asset("desktop-chat.js").replace("__REQUEST__",new JSONObject().put("app",a.command.get(0)).put("prompt",desktopPrompt).put("conversationId",conversationId).put("files",desktopFiles==null?new JSONArray():desktopFiles).toString());
                         ssh.run("/usr/bin/osascript -l JavaScript -",script,decoder::accept,cancelled,650000);
                     }
                 }
@@ -262,7 +264,7 @@ final class PocketEngine {
         }catch(Exception e){
             if(!a.desktop()&&desktop&&inventory.desktopAgent(a.id)!=null&&!cancelled.get()&&ssh.connected()&&canFallback(decoder,e)){
                 host.event("update",new JSONObject().put("id",run).put("text","CLI 启动失败，正在使用电脑上的 "+a.name+" 桌面应用。").put("status","已自动切换桌面"));
-                return runAgent(inventory.desktopAgent(a.id),prompt,write,label,directory,true,hostPermissions,conversationId,currentPrompt);
+                return runAgent(inventory.desktopAgent(a.id),prompt,write,label,directory,true,hostPermissions,conversationId,currentPrompt,desktopFiles);
             }
             host.event("update",new JSONObject().put("id",run).put("text",decoder.text()).put("status",e instanceof EventDecoder.DesktopEnded?"已结束":cancelled.get()?"状态待确认":"失败："+message(e)));
             throw e;

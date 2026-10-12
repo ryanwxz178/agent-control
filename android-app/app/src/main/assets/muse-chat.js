@@ -99,9 +99,8 @@ function flushQueue(){
 }
 function dispatchMessage(text,messageId=cryptoId(),files=[]){
   const agent=state.agents.find(a=>a.id===state.selected);
-  if(files.length&&(state.profile.accessMode==='desktop'||agent?.kind==='desktop')){toast('文件对话请使用可读取本地文件的 CLI Agent');state.draftUploads=files;drawInputFiles();$('input').value=text;saveDraft();syncComposer();museQueue.pause();if(queueCompletion){const finish=queueCompletion;queueCompletion=null;finish();}return;}
-  if(state.profile.accessMode==='cli'&&agent?.kind==='desktop'){toast(agent.name+' 当前通过桌面接入，请将接入方式改为「直接桌面」或「默认接入」');$('agentButton').click();if(!$('input').value.trim()){$('input').value=text;saveDraft();syncComposer();}museQueue.pause();if(queueCompletion){const finish=queueCompletion;queueCompletion=null;finish();}return;}
-  const request={...state.profile,agent:state.selected,prompt:text,uploads:files.map(f=>f.id),historyUploads:[...new Set(state.messages.filter(m=>m.role==='user').flatMap(m=>(m.uploadedFiles||[]).map(f=>f.id)))].slice(-20),history:conversationHistory(),messageId,conversationId:state.conversationId,accessMode:state.profile.accessMode||'auto'};
+  if((state.profile.accessMode==='cli'&&agent?.kind==='desktop')||(files.length&&state.selected==='auto'&&state.profile.accessMode==='desktop')){toast(state.selected==='auto'?'带附件的桌面对话请先选择一个 Agent':agent.name+' 当前通过桌面接入，请将接入方式改为「直接桌面」或「默认接入」');state.draftUploads=files;drawInputFiles();$('agentButton').click();if(!$('input').value.trim())$('input').value=text;saveDraft();syncComposer();museQueue.pause();if(queueCompletion){const finish=queueCompletion;queueCompletion=null;finish();}return;}
+  const request={...state.profile,agent:state.selected,prompt:text,uploads:files.map(f=>f.id),historyUploads:[...new Set(state.messages.filter(m=>m.role==='user').flatMap(m=>(m.uploadedFiles||[]).map(f=>f.id)))].slice(-20),history:conversationHistory(),messageId,conversationId:state.conversationId,accessMode:agent?.kind==='desktop'?'desktop':state.profile.accessMode||'auto'};
   if(state.profile.taskService)pendingSubmissions.set(messageId,state.conversationId);
   add({id:messageId,role:'user',text,uploadedFiles:files,createdAt:Date.now()});setBusy(true);call('send',JSON.stringify(request));
 }

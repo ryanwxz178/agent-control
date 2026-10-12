@@ -92,6 +92,69 @@ $observed=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Text' '�
 $observed[11]|Add-Member className '_copyButton_1ncbp_1 '
 $reply=Get-ReplyState $observed $profiles.workbuddy '你好'
 Assert ($reply.sent -and $reply.complete -and $reply.text -ceq '正确回复') 'observed WorkBuddy header repeats the request outside chat; zero-width text runs do not duplicate it'
+$fileA=@{path='C:\work\.agent-control-input\11111111-1111-1111-1111-111111111111-报告.pdf';size=3}
+$fileB=@{path='C:\work\.agent-control-input\22222222-2222-2222-2222-222222222222-截图.png';size=4}
+$fileNodes=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' ''),(Node 3 2 'Text' '总结附件'),(Node 4 2 'Group' ''),(Node 5 4 'Text' ([IO.Path]::GetFileName($fileA.path))),(Node 6 2 'Group' ''),(Node 7 6 'Text' ([IO.Path]::GetFileName($fileB.path))))
+$fileNodes[4]|Add-Member className '_tag_h25vi_19 _fileTag_h25vi_111 _inlineTag_h25vi_149'
+$fileNodes[6]|Add-Member className '_tag_h25vi_19 _fileTag_h25vi_111 _inlineTag_h25vi_149'
+Assert (Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA,$fileB)) 'two exact inline file tokens confirm composer attachments'
+Assert ((Get-ComposerPlainText $fileNodes $fileNodes[2] $profiles.workbuddy) -ceq '总结附件') 'prompt text excludes file tokens without deleting attachments'
+Assert (Test-ComposerPrompt $fileNodes $fileNodes[2] $profiles.workbuddy '总结附件') 'attachment composer retains the original prompt'
+$fileNodes[3].name='总结 附件'
+Assert (!(Test-ComposerPrompt $fileNodes $fileNodes[2] $profiles.workbuddy '总结附件')) 'attachment confirmation retains meaningful spaces instead of accepting an edited prompt'
+$fileNodes[3].name='总结附件'
+$fileNodes[6].className+=' _uploading_h25vi_51'
+Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA,$fileB))) 'processing attachment prevents send readiness'
+$fileNodes[6].className='_fileTag_h25vi_111 _failed_h25vi_60'
+Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA,$fileB))) 'failed attachment prevents send readiness'
+$fileNodes[6].className='_fileTag_h25vi_111';$fileNodes[7].name=[IO.Path]::GetFileName($fileA.path)
+Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA,$fileB))) 'duplicate token cannot stand in for a missing file'
+$fileNodes[7].name=[IO.Path]::GetFileName($fileB.path);$fileNodes[6].parent=1
+Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA,$fileB))) 'transcript or sidebar filenames cannot confirm composer attachments'
+$fileNodes[6].parent=2
+Assert (!(Test-ComposerFilesReady $fileNodes $fileNodes[2] $profiles.workbuddy @($fileA))) 'unrequested extra attachment prevents send readiness'
+$messageFiles=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' ''),(Node 3 1 'Group' ''),(Node 4 3 'Text' '总结附件'),(Node 5 3 'Group' ''),(Node 6 5 'Text' ([IO.Path]::GetFileName($fileA.path))),(Node 7 3 'Button' '复制'),(Node 8 3 'Text' '已完成'),(Node 9 3 'Text' '附件已总结'),(Node 10 3 'Button' '复制'),(Node 11 1 'Button' '发送'))
+$messageFiles[5]|Add-Member className '_fileTag_h25vi_111 _readOnly_h25vi_57';$messageFiles[10]|Add-Member className '_copyButton_1ncbp_1'
+$fileReply=Get-ReplyState $messageFiles $profiles.workbuddy '总结附件'
+Assert ($fileReply.sent -and $fileReply.complete -and $fileReply.text -ceq '附件已总结') 'file message labels do not corrupt exact prompt/reply confirmation'
+$pickerNodes=@((Node 0 -1 'Window' 'Open'),(Node 1 0 'Pane' ''),(Node 2 1 'ComboBox' 'File name'),(Node 3 2 'Edit' 'File name'),(Node 4 0 'Edit' 'Search'),(Node 5 0 'Button' '打开(O)'))
+$pickerNodes[1].automationId='FileNameControlHost';$pickerNodes[2].automationId='1148';$pickerNodes[3].automationId='1001';$pickerNodes[4].automationId='SearchEditBox';$pickerNodes[5].automationId='1'
+$pickerControls=Get-FileDialogControls $pickerNodes
+Assert ($pickerControls.edit.index -eq 3 -and $pickerControls.open.index -eq 5) 'nested filename host and ComboBox resolve the same Edit without choosing Search'
+$ambiguousPicker=@($pickerNodes)+(Node 6 2 'Edit' 'Other filename')
+$rejected=$false;try{Get-FileDialogControls $ambiguousPicker|Out-Null}catch{$rejected=$true}
+Assert $rejected 'two editable filename targets fail closed'
+$pickerNodes[5].name='Delete'
+$rejected=$false;try{Get-FileDialogControls $pickerNodes|Out-Null}catch{$rejected=$true}
+Assert $rejected 'id1 with a non-Open semantic name is not clicked through UIA'
+if($env:OS -eq 'Windows_NT') {
+    $uploadFolder=Join-Path ([IO.Path]::GetTempPath()) ('agent-files-test-'+[Guid]::NewGuid().ToString('N'))
+    $inputFolder=Join-Path $uploadFolder '.agent-control-input'
+    [IO.Directory]::CreateDirectory($inputFolder)|Out-Null
+    try {
+        $filePath=Join-Path $inputFolder ([Guid]::NewGuid().ToString()+'-报告.pdf')
+        [IO.File]::WriteAllBytes($filePath,[byte[]]@(1,2,3))
+        $upload=@{path=$filePath.Replace('\','/');size=3;mime='application/pdf'}
+        $resolved=@(Resolve-DesktopFiles @($upload) $profiles.workbuddy)
+        Assert ($resolved.Count -eq 1 -and $resolved[0].path -ceq $filePath) 'uploaded local regular file resolves before desktop UI is touched'
+        foreach($case in @('wrongSize','traversal','unc','outside','unsupportedApp','unsupportedType','duplicate','tooMany','notArray')) {
+            $bad=$upload.Clone();$adapter=$profiles.workbuddy;$items=@($bad)
+            switch($case) {
+                wrongSize {$bad.size=4}
+                traversal {$bad.path=$inputFolder+'\..\.agent-control-input\'+[IO.Path]::GetFileName($filePath)}
+                unc {$bad.path='\\server\share\.agent-control-input\'+[IO.Path]::GetFileName($filePath)}
+                outside {$bad.path=$uploadFolder+'\'+[IO.Path]::GetFileName($filePath);[IO.File]::WriteAllBytes($bad.path,[byte[]]@(1,2,3))}
+                unsupportedApp {$adapter=$profiles.teleagent}
+                unsupportedType {$bad.path=Join-Path $inputFolder ([Guid]::NewGuid().ToString()+'-program.exe');[IO.File]::WriteAllBytes($bad.path,[byte[]]@(1,2,3))}
+                duplicate {$items=@($bad,$bad)}
+                tooMany {$items=@($bad,$bad,$bad,$bad,$bad)}
+                notArray {$items=$bad}
+            }
+            $rejected=$false;try{Resolve-DesktopFiles $items $adapter|Out-Null}catch{$rejected=$true}
+            Assert $rejected ('unsafe desktop attachment rejected: '+$case)
+        }
+    } finally { [IO.Directory]::Delete($uploadFolder,$true) }
+}
 $id=[Guid]::NewGuid().ToString('N'); $broker=[Guid]::NewGuid().ToString('N'); $now=[DateTime]::UtcNow
 $r=@{protocol=1;id=$id;brokerId=$broker;createdUtc=$now.ToString('o');prompt='test'}
 Assert-FreshRequest $r $id $broker $now
@@ -126,6 +189,7 @@ try {
     $script:activeId='running';Save-Status
     $updated=[IO.File]::ReadAllText("$Root/status.json")|ConvertFrom-Json
     Assert $updated.busy 'second heartbeat replaces existing status on host runtime'
+    Assert $updated.fileUploads 'new bridge advertises attachment capability so old brokers cannot silently drop files'
     Assert ([IO.File]::ReadAllText("$Root/status.previous") -eq $first) 'previous heartbeat retained during atomic replacement'
 } finally { [IO.Directory]::Delete($Root,$true) }
 # Compile the P/Invoke helper without invoking Windows APIs on this host.
@@ -149,7 +213,6 @@ foreach ($file in @((Get-ChildItem "$repo/windows/*.ps1"),(Get-ChildItem "$repo/
     [Management.Automation.Language.Parser]::ParseInput([IO.File]::ReadAllText($file.FullName,[Text.Encoding]::UTF8),[ref]$tokens,[ref]$errors) | Out-Null
     Assert ($errors.Count -eq 0) ("PowerShell syntax: " + $file.Name + ' ' + ($errors.Message -join '; '))
 }
-Write-Output "ALL $script:passed WINDOWS LOGIC CHECKS PASSED"
 
 # A repeated exact prompt cannot select an arbitrary visible turn.
 $duplicate=@(@{index=0;parent=-1;role='Document';name='';automationId='doc_editor'},@{index=1;parent=0;role='Edit';name='';value='';enabled=$true;offscreen=$false},@{index=2;parent=0;role='Text';name='重复请求'},@{index=3;parent=0;role='Text';name='重复请求'})
@@ -162,10 +225,27 @@ $clientSource=Get-Content "$repo/android-app/app/src/main/assets/desktop-windows
 $payload=@{app='teleagent';prompt='续聊当前手机消息';conversationId='phone-one'}|ConvertTo-Json -Compress
 $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
 $requestLine=[regex]::Match($clientSource,'(?m)^\s+\$request = .*ConvertFrom-Json\r?$').Value
+$filesLine=[regex]::Match($clientSource,'(?m)^\s+\$requestFiles=@\(\);.*\r?$').Value
+$capabilityLine=[regex]::Match($clientSource,'(?m)^\s+if \(\$requestFiles\.Count -gt 0 -and !\$status\.fileUploads\).*\r?$').Value
 $bodyLine=[regex]::Match($clientSource,'(?m)^\s+\$body = @\{.*\}\r?$').Value
-Assert ($requestLine -and $bodyLine) 'production Windows client queue construction found'
+Assert ($requestLine -and $filesLine -and $capabilityLine -and $bodyLine) 'production Windows client queue and attachment guards found'
 $status=@{brokerId='test-broker'};$id='test-request'
 Invoke-Expression $requestLine.Replace('__REQUEST_BASE64__',$encoded)
+Invoke-Expression $filesLine
+Invoke-Expression $capabilityLine
 Invoke-Expression $bodyLine
-$queued=$body|ConvertTo-Json -Compress|ConvertFrom-Json
+$queued=$body|ConvertTo-Json -Depth 8 -Compress|ConvertFrom-Json
 Assert ($queued.conversationId -eq 'phone-one' -and $queued.prompt -eq '续聊当前手机消息' -and $queued.app -eq 'teleagent') 'production Windows queue preserves phone conversation ID and current prompt'
+Assert ($null -ne $queued.files -and $queued.files.Count -eq 0) 'missing attachment field stays an empty array and text chat works with old bridges'
+$uploadPayload=@{app='workbuddy';prompt='总结附件';conversationId='phone-files';files=@(@{path='C:/work/.agent-control-input/11111111-1111-1111-1111-111111111111-报告.pdf';name='报告.pdf';size=3;mime='application/pdf'})}|ConvertTo-Json -Depth 8 -Compress
+$encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($uploadPayload))
+Invoke-Expression $requestLine.Replace('__REQUEST_BASE64__',$encoded)
+Invoke-Expression $filesLine
+$rejected=$false;try{Invoke-Expression $capabilityLine}catch{$rejected=$true}
+Assert $rejected 'current uploads are rejected by old bridge capability before queueing or sending'
+$status.fileUploads=$true
+Invoke-Expression $capabilityLine
+Invoke-Expression $bodyLine
+$queued=$body|ConvertTo-Json -Depth 8 -Compress|ConvertFrom-Json
+Assert ($queued.files.Count -eq 1 -and $queued.files[0].name -ceq '报告.pdf' -and $queued.files[0].size -eq 3 -and $queued.files[0].path -ceq $request.files[0].path) 'new Windows queue preserves current file metadata and path at JSON depth8'
+Write-Output "ALL $script:passed WINDOWS LOGIC CHECKS PASSED"

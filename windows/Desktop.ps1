@@ -20,6 +20,55 @@ public static class PocketDesktop {
   return found.ToArray();
  }
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd,uint command);
+ [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hwnd);
+ [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr hwnd,EnumProc callback,IntPtr param);
+ [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr hwnd);
+ [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr hwnd);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr hwnd,uint msg,IntPtr wParam,string lParam,uint flags,uint timeout,out IntPtr result);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr hwnd,uint msg,IntPtr wParam,StringBuilder lParam,uint flags,uint timeout,out IntPtr result);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,StringBuilder text,int length);
+ public static bool OwnedFileDialog(IntPtr dialog,IntPtr owner) {
+  var name=new StringBuilder(256);GetClassName(dialog,name,256);
+  if(name.ToString()!="#32770"||!IsWindowVisible(dialog))return false;
+  uint dialogPid,ownerPid;GetWindowThreadProcessId(dialog,out dialogPid);GetWindowThreadProcessId(owner,out ownerPid);
+  if(dialogPid!=ownerPid)return false;
+  var at=dialog;
+  for(int i=0;i<16;i++){at=GetWindow(at,4);if(at==owner)return true;if(at==IntPtr.Zero)return false;}
+  return false;
+ }
+ public static IntPtr[] FileDialogsForOwner(IntPtr owner) {
+  var found=new List<IntPtr>();
+  EnumWindows((hwnd,param)=>{if(OwnedFileDialog(hwnd,owner))found.Add(hwnd);return true;},IntPtr.Zero);
+  return found.ToArray();
+ }
+ static string WindowClass(IntPtr hwnd) {var value=new StringBuilder(256);GetClassName(hwnd,value,256);return value.ToString();}
+ static bool ChildOf(IntPtr child,IntPtr parent) {for(int i=0;i<32;i++){child=GetParent(child);if(child==parent)return true;if(child==IntPtr.Zero)return false;}return false;}
+ public static IntPtr[] NativeFileControls(IntPtr dialog,IntPtr owner) {
+  if(!OwnedFileDialog(dialog,owner))return new IntPtr[0];
+  var hosts=new List<IntPtr>();var buttons=new List<IntPtr>();var edits=new List<IntPtr>();
+  EnumChildWindows(dialog,(hwnd,param)=>{
+   if(IsWindowVisible(hwnd)&&IsWindowEnabled(hwnd)){
+    var type=WindowClass(hwnd);int id=GetDlgCtrlID(hwnd);
+    if(id==1148&&(type=="ComboBoxEx32"||type=="ComboBox"))hosts.Add(hwnd);
+    if(id==1&&type=="Button")buttons.Add(hwnd);
+    if(type=="Edit")edits.Add(hwnd);
+   }return true;},IntPtr.Zero);
+  var selected=new List<IntPtr>();
+  foreach(var edit in edits){foreach(var host in hosts){if(ChildOf(edit,host)){selected.Add(edit);break;}}}
+  return selected.Count==1&&buttons.Count==1?new[]{selected[0],buttons[0]}:new IntPtr[0];
+ }
+ public static bool SelectNativeFiles(IntPtr dialog,IntPtr owner,string files) {
+  if(GetForegroundWindow()!=dialog||!OwnedFileDialog(dialog,owner)||files.Length>32767)return false;
+  var controls=NativeFileControls(dialog,owner);if(controls.Length!=2)return false;
+  IntPtr result;
+  if(SendMessageTimeout(controls[0],0x000C,IntPtr.Zero,files,2,2000,out result)==IntPtr.Zero||result==IntPtr.Zero)return false;
+  var read=new StringBuilder(files.Length+2);
+  if(SendMessageTimeout(controls[0],0x000D,(IntPtr)read.Capacity,read,2,2000,out result)==IntPtr.Zero||read.ToString()!=files)return false;
+  if(GetForegroundWindow()!=dialog||!OwnedFileDialog(dialog,owner))return false;
+  // Only the verified native picker Open button is clicked, once.
+  return SendMessageTimeout(controls[1],0x00F5,IntPtr.Zero,(string)null,2,2000,out result)!=IntPtr.Zero;
+ }
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from,uint to,bool attach);
@@ -93,6 +142,7 @@ function Invoke-UiButton($Node,$Window,[switch]$Ending) {
     if (!$Node.enabled -or $Node.offscreen) { throw '按钮不可用，未点击' }
     $pattern=$null
     if ($Node.raw.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)) { $pattern.Invoke(); return }
+    if ($Node.raw.TryGetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$pattern)) { $pattern.Expand(); return }
     if ($Node.raw.TryGetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern,[ref]$pattern)) { $pattern.Select(); return }
     $point=[Windows.Point]::new()
     if (!$Node.raw.TryGetClickablePoint([ref]$point)) { throw '无法获得按钮的可点击位置，未操作' }
@@ -126,6 +176,90 @@ function Get-AppWindow($App,$Adapter) {
 function Get-ConversationTranscript($Chat) {
     return (Normalize-Message (($Chat.nodes | Where-Object { $_.role -eq 'Text' } | ForEach-Object { $_.name }) -join "`n"))
 }
+function Wait-DesktopFileMenu($Window,$Step) {
+    for($attempt=0;$attempt -lt 16;$attempt++) {
+        Assert-Window $Window
+        $nodes=@(Get-UiSnapshot $Window)
+        $matches=@($nodes | Where-Object { $_.role -in @('MenuItem','Button') -and $_.enabled -and !$_.offscreen -and $_.name -match $Step.name -and (!$Step.className -or $_.className -match $Step.className) })
+        if($matches.Count -gt 1){throw '附件菜单不唯一，未添加或发送'}
+        if($matches.Count -eq 1){return $matches[0]}
+        Start-Sleep -Milliseconds 200
+    }
+    throw '未能识别桌面 APP 的附件菜单，请在电脑检查当前版本；未发送'
+}
+function Invoke-DesktopFilePicker($Window,$Chat,$Adapter,$Files) {
+    if(@(Get-ComposerFileTags @(Get-UiSnapshot $Window) $Chat.editor $Adapter).Count){throw '电脑输入框已有附件草稿，未覆盖或发送'}
+    $triggers=@($Chat.nodes | Where-Object { $_.role -in @('Button','ComboBox') -and $_.enabled -and !$_.offscreen -and $Adapter.fileMenuClass -and $_.className -match $Adapter.fileMenuClass })
+    if($triggers.Count -ne 1){throw '无法唯一识别桌面 APP 的附件入口，请在电脑检查；未发送'}
+    if(@([PocketDesktop]::FileDialogsForOwner([IntPtr]$Window.Current.NativeWindowHandle)).Count){throw '电脑已打开文件选择窗口，未覆盖或发送'}
+    Invoke-UiButton $triggers[0] $Window
+    foreach($step in @($Adapter.fileMenuSteps)) {
+        $node=Wait-DesktopFileMenu $Window $step
+        if($step.hover) {
+            # WorkBuddy's Add Files submenu opens on hover. Position comes from UIA only.
+            $point=[Windows.Point]::new()
+            if(!$node.raw.TryGetClickablePoint([ref]$point)){throw '附件子菜单没有可用位置，未发送'}
+            Assert-Window $Window
+            if(![PocketDesktop]::SetCursorPos([int]$point.X,[int]$point.Y)){throw '无法打开附件子菜单，未发送'}
+        } else { Invoke-UiButton $node $Window }
+    }
+    $dialog=$null
+    for($attempt=0;$attempt -lt 24;$attempt++) {
+        Pulse
+        $handles=@([PocketDesktop]::FileDialogsForOwner([IntPtr]$Window.Current.NativeWindowHandle))
+        if($handles.Count -gt 1){throw '目标 APP 的文件选择窗口不唯一，未发送'}
+        if($handles.Count -eq 1) {
+            if([PocketDesktop]::GetForegroundWindow() -ne [IntPtr]$handles[0]){throw '目标文件选择窗口没有前台焦点，未输入或发送'}
+            $dialog=[Windows.Automation.AutomationElement]::FromHandle([IntPtr]$handles[0]);break
+        }
+        # Another application's popup must not receive a filename.
+        if([PocketDesktop]::GetForegroundWindow() -ne [IntPtr]$Window.Current.NativeWindowHandle){throw '其他窗口获得焦点，未输入附件路径或发送'}
+        Start-Sleep -Milliseconds 250
+    }
+    if(!$dialog){throw '目标 APP 未打开可识别的文件选择窗口，未发送'}
+    $controls=$null
+    $nativeControls=$false
+    for($attempt=0;$attempt -lt 24;$attempt++) {
+        Assert-Window $dialog
+        if(![PocketDesktop]::OwnedFileDialog([IntPtr]$dialog.Current.NativeWindowHandle,[IntPtr]$Window.Current.NativeWindowHandle)){throw '文件窗口归属已改变，未输入或发送'}
+        try { $controls=Get-FileDialogControls @(Get-UiSnapshot $dialog);break } catch { $controls=$null }
+        # Some WinPS UIA providers report all native controls as Pane. Use exact child HWNDs.
+        if(@([PocketDesktop]::NativeFileControls([IntPtr]$dialog.Current.NativeWindowHandle,[IntPtr]$Window.Current.NativeWindowHandle)).Count -eq 2){$nativeControls=$true;break}
+        Start-Sleep -Milliseconds 200
+    }
+    if(!$controls -and !$nativeControls){throw '无法唯一识别目标文件窗口的文件名和打开控件，未发送'}
+    $selection=(@($Files | ForEach-Object { '"'+$_.path+'"' }) -join ' ')
+    Assert-Window $dialog
+    if(![PocketDesktop]::OwnedFileDialog([IntPtr]$dialog.Current.NativeWindowHandle,[IntPtr]$Window.Current.NativeWindowHandle)){throw '文件窗口归属已改变，未输入或发送'}
+    if($nativeControls) {
+        if(![PocketDesktop]::SelectNativeFiles([IntPtr]$dialog.Current.NativeWindowHandle,[IntPtr]$Window.Current.NativeWindowHandle,$selection)){throw '原生附件选择内容或窗口核对失败，未发送'}
+    } else {
+        $pattern=$null
+        if(!$controls.edit.raw.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$pattern) -or $pattern.Current.IsReadOnly){throw '文件选择框不可写，未发送'}
+        $pattern.SetValue($selection)
+        if($pattern.Current.Value -cne $selection){throw '附件选择内容回读不一致，未打开或发送'}
+        Invoke-UiButton $controls.open $dialog
+    }
+    Write-Event 'status' '正在确认桌面 APP 已添加文件附件'
+    $returned=$false
+    for($attempt=0;$attempt -lt 80;$attempt++) {
+        Pulse
+        $foreground=[PocketDesktop]::GetForegroundWindow()
+        if($foreground -ne [IntPtr]$Window.Current.NativeWindowHandle) {
+            if([PocketDesktop]::OwnedFileDialog($foreground,[IntPtr]$Window.Current.NativeWindowHandle)){Start-Sleep -Milliseconds 400;continue}
+            throw '桌面 APP 添加附件时失去前台焦点，未发送'
+        }
+        $returned=$true
+        $nodes=@(Get-UiSnapshot $Window);$current=Get-ChatScope $nodes $Adapter
+        if(($current.editor.raw.GetRuntimeId() -join '-') -cne ($Chat.editor.raw.GetRuntimeId() -join '-')){throw '附件添加后输入框身份已改变，未发送'}
+        $tags=@(Get-ComposerFileTags $nodes $current.editor $Adapter)
+        if(@($tags | Where-Object { $_.className -match '(?:^| )_failed_[A-Za-z0-9]+_\d+(?: |$)' }).Count){throw '桌面 APP 未能处理附件，请在电脑检查格式或大小限制；未发送'}
+        if(Test-ComposerFilesReady $nodes $current.editor $Adapter $Files){return}
+        Start-Sleep -Milliseconds 400
+    }
+    if(!$returned){throw '桌面 APP 未关闭文件选择窗口，请在电脑检查；未发送'}
+    throw '未能确认全部文件附件已就绪，请在电脑检查附件草稿；未发送'
+}
 function Save-DesktopConversation($Path,$State) {
     if (!$Path) { return }
     $folder=[IO.Path]::GetDirectoryName($Path)
@@ -155,7 +289,8 @@ function Invoke-EndDesktopConversation($App,$Adapter,[string]$ConversationId) {
     }
     throw '原桌面任务尚未确认停止，请先在电脑结束任务'
 }
-function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationId) {
+function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationId,$Files=$null) {
+    $files=@(Resolve-DesktopFiles $Files $Adapter)
     $window=Get-AppWindow $App $Adapter
     Assert-Window $window
     $nodes=@(Get-UiSnapshot $window)
@@ -177,6 +312,13 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
     } catch { # A home screen may not expose the editor until New chat is invoked.
     }
     if (@($nodes | Where-Object { $_.role -eq 'Button' -and $_.name -match $Adapter.busy }).Count) { throw '应用已有运行中的任务，未新建或发送任务' }
+    try {
+        $existingChat=Get-ChatScope $nodes $Adapter
+        if(@(Get-ComposerFileTags $nodes $existingChat.editor $Adapter).Count){throw '电脑输入框已有附件草稿，未覆盖、新建或发送'}
+    } catch {
+        if($_.Exception.Message -like '*附件草稿*'){throw}
+        # Home screens without an editor may still be opened through New chat.
+    }
     $chat=$null
     if ($previous) {
         $chat=Get-ChatScope $nodes $Adapter
@@ -202,6 +344,9 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
     if (!$chat) { throw '未能确认空白新对话，未发送' }
     }
     Assert-Window $window
+    $nodes=@(Get-UiSnapshot $window);$chat=Get-ChatScope $nodes $Adapter
+    if(@(Get-ComposerFileTags $nodes $chat.editor $Adapter).Count){throw '电脑输入框已有附件草稿，未覆盖或发送'}
+    if(Get-EditorValue $chat.editor $Adapter){throw '电脑输入框有草稿，未覆盖或发送'}
     # Paste raises the application's real editor events. Restore only if still our clipboard.
     $saved=[Windows.Forms.Clipboard]::GetDataObject()
     try {
@@ -220,6 +365,11 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
     }
     $nodes=@(Get-UiSnapshot $window); $chat=Get-ChatScope $nodes $Adapter
     if (((Get-EditorValue $chat.editor $Adapter) -replace "`r`n","`n").TrimEnd("`r","`n") -cne ($Prompt -replace "`r`n","`n").TrimEnd("`r","`n")) { throw '输入框内容回读不一致，未发送' }
+    if($files.Count) {
+        Invoke-DesktopFilePicker $window $chat $Adapter $files
+        $nodes=@(Get-UiSnapshot $window);$chat=Get-ChatScope $nodes $Adapter
+        if(!(Test-ComposerFilesReady $nodes $chat.editor $Adapter $files) -or !(Test-ComposerPrompt $nodes $chat.editor $Adapter $Prompt)){throw '附件或任务文本核对失败，保留电脑草稿，未发送'}
+    }
     $send=@($chat.nodes | Where-Object { (Test-AdapterButton $_ $Adapter.send $Adapter.sendClass) -and $_.enabled -and !$_.offscreen })
     if ($send.Count -ne 1) { throw '发送按钮不唯一或未启用，保留草稿，未发送' }
     $conversationState=@{version=1;app=$App.id;conversationId=$ConversationId;prompt=$Prompt;status='pending';transcript=''}
@@ -256,7 +406,9 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
         if ($editorIdentity -and $identity -ne $editorIdentity) { throw '电脑聊天输入框身份已改变，已停止本轮；不会重发' }
         $editorIdentity=$identity
         $draft=Get-EditorValue $currentChat.editor $Adapter
-        if ($draft -and !((([DateTime]::UtcNow-$started).TotalSeconds -lt 3) -and (Normalize-Message $draft) -ceq (Normalize-Message $Prompt))) { throw '电脑输入框被修改，已停止本轮，未覆盖或重发消息' }
+        $ownDraft=(Normalize-Message $draft) -ceq (Normalize-Message $Prompt)
+        if($files.Count -and $draft){$ownDraft=((Test-ComposerFilesReady $currentNodes $currentChat.editor $Adapter $files) -and (Test-ComposerPrompt $currentNodes $currentChat.editor $Adapter $Prompt))}
+        if ($draft -and !((([DateTime]::UtcNow-$started).TotalSeconds -lt 3) -and $ownDraft)) { throw '电脑输入框被修改，已停止本轮，未覆盖或重发消息' }
         $copies=@($currentChat.nodes | Where-Object { $_.role -eq 'Button' -and $_.name -match '^(复制|Copy)$' })
         if ($copies.Count -gt $baselineCopies+2) { throw '电脑在当前会话增加了其他消息，已停止本轮' }
         $state=Get-ReplyState $currentNodes $Adapter $Prompt

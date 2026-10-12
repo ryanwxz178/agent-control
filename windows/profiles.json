@@ -11,6 +11,15 @@
     "editorId": "",
     "chatEditorParent": true,
     "messageCopyScope": true,
+    "fileUploads": true,
+    "fileMenuClass": "(?:^| )cr-add-menu__trigger(?: |$)",
+    "fileMenuSteps": [
+      {"name": "^(添加文件|新增檔案|Add Files)$", "hover": true},
+      {"name": "^(本地文件|本機檔案|Local files)$", "className": "(?:^| )cr-files-submenu__item(?: |$)"}
+    ],
+    "fileTagClass": "(?:^| )_fileTag_[A-Za-z0-9]+_\\d+(?: |$)",
+    "filePendingClass": "(?:^| )_(?:uploading|failed)_[A-Za-z0-9]+_\\d+(?: |$)",
+    "fileExtensions": ["png","jpg","jpeg","webp","gif","pdf","txt","md","json","jsonl","xml","yaml","yml","csv","tsv","log","doc","docx","xls","xlsx","ppt","pptx","bmp","svg","zip","js","ts","jsx","tsx","py","go","java","cpp","c","h","css","scss","html"],
     "blank": "^(WorkBuddy, 我帮你|今天帮你做些什么.*|你想完成什么.*|有什么可以帮.*|开始新任务.*|What would you like.*|How can I help.*)$",
     "launchArgs": [
       "--force-renderer-accessibility=complete",
