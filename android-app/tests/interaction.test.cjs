@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 (async()=>{
- const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
  const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{window.calls=[];window.Pocket={save(){},previewAttachment:id=>calls.push(['preview',id]),respond:(...a)=>calls.push(a),inspectDesktop:id=>calls.push(['inspect',id]),operateDesktop:(...a)=>calls.push(['operate',...a]),tapDesktop:(...a)=>calls.push(['tap',...a]),requestAttachment:id=>calls.push(['file',id]),exportAttachment:id=>calls.push(['save',id])};});
  await page.goto('file://'+path.resolve('app/src/main/assets/index.html'));
@@ -11,7 +11,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  await page.evaluate(()=>{receive('interactionState',{id:'r',token:'t',state:'closed',message:'电脑已结束该请求'});receive('interaction',{id:'r',token:'q',kind:'questions',title:'需要补充信息',questions:[{id:'q1',question:'文件保存在哪个目录？',options:[{label:'Downloads',description:'保存到下载文件夹'}]}],state:'pending',expiresAt:Date.now()+180000});});
  await page.getByRole('button',{name:'提交回答'}).click();assert.equal(await page.evaluate(()=>calls.length),1);
  await page.getByRole('textbox',{name:'文件保存在哪个目录？'}).fill('/tmp/中文');await page.getByRole('button',{name:'提交回答'}).click();assert.equal(await page.evaluate(()=>JSON.parse(calls[1][1]).answers.q1),'/tmp/中文');
- await page.evaluate(()=>{receive('attachment',{id:'r',attachmentId:'f',name:'方案.png',path:'/tmp/方案.png'});});await page.locator('.attachment-button').click();assert.equal(await page.evaluate(()=>calls.at(-1)[0]),'file');
+ await page.evaluate(()=>{receive('attachment',{id:'r',attachmentId:'f',name:'方案.pdf',path:'/tmp/方案.pdf'});});await page.locator('.attachment-button').click();assert.equal(await page.evaluate(()=>calls.at(-1)[0]),'file');
  await page.evaluate(()=>receive('attachmentReady',{attachmentId:'f',name:'方案.png',size:82,preview:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='}));
  assert.ok(await page.locator('#attachmentViewer').evaluate(n=>n.open));await page.getByRole('button',{name:'保存到手机'}).click();assert.equal(await page.evaluate(()=>calls.at(-1)[0]),'save');
  await page.locator('[data-close="attachmentViewer"]').click();await page.evaluate(()=>{setTheme(true);receive('interaction',{id:'r',token:'expired',title:'已过期确认',kind:'approval',state:'pending',expiresAt:Date.now()-1,options:[{id:'accept',label:'过期操作'}]});});assert.equal(await page.getByRole('button',{name:'过期操作'}).count(),0);

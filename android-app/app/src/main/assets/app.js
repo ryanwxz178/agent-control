@@ -50,7 +50,8 @@ function renderMessage(m){
   if(m.role==='user'){const copy=document.createElement('button');copy.type='button';copy.className='user-copy-button';copy.setAttribute('aria-label','复制指令');copy.title='复制指令';copy.append(icon('copy'));copy.onclick=()=>copyReply(m.text,'指令');node.prepend(copy);}
   renderExtras(node,m);return node;
 }
-const automaticPreviews=new Set();const attachmentCache=new Map();let desktopView=null,desktopRun='';
+const automaticPreviews=new Set();const attachmentCache=new Map();const attachmentPreviews=new Map();let desktopView=null,desktopRun='';
+function isImageAttachment(data){return data.remote||data.preview||/\.(png|jpe?g|webp|gif|bmp)$/i.test(data.name||data.path||'');}
 function findNode(id){return Array.from($('messages').children).find(n=>n.dataset.id===id);}
 function renderExtras(node,m){
  if(m.role!=='assistant')return;
@@ -91,7 +92,7 @@ function renderExtras(node,m){
   if(!active&&interaction.state!=='submitting'){actions.hidden=true;const result=document.createElement('p');result.className='interaction-result';result.textContent=interaction.selectedLabel?'已选择：'+interaction.selectedLabel:'本次确认已结束';panel.append(result);}panel.append(actions);const status=document.createElement('p');status.className='interaction-state';status.textContent=active?'等待你选择，3 分钟后失效':interaction.state==='submitting'?'正在提交，请勿重复操作':interaction.message||'请求已失效，请在电脑查看';panel.classList.toggle('closed',!active);panel.append(status);node.append(panel);
  }
  if(m.desktop){const b=document.createElement('button');b.className='secondary desktop-button';b.textContent='查看电脑与操作';b.onclick=()=>openDesktop(m.id);node.append(b);}
- if(m.attachments?.length){const list=document.createElement('div');list.className='attachment-list';for(const attachment of m.attachments){const b=document.createElement('button');b.className='attachment-button';const title=document.createElement('strong');title.textContent=attachment.name;const sub=document.createElement('small');sub.textContent=attachment.expired?'历史附件 · 请从原电脑重新获取':attachment.loading?'正在读取…':attachment.error||'点按预览或保存 · '+attachment.path;const cached=attachmentCache.get(attachment.attachmentId);if(cached?.preview){const img=document.createElement('img');img.className='attachment-thumbnail';img.alt=attachment.name;const follow=$('chat').scrollHeight-$('chat').clientHeight-$('chat').scrollTop<140;img.onload=()=>{if(follow)scrollEnd();};img.src=cached.preview;b.append(img);}b.append(title,sub);b.disabled=!!attachment.expired||!!attachment.loading;b.onclick=()=>{if(attachmentCache.has(attachment.attachmentId))showAttachment(attachmentCache.get(attachment.attachmentId));else{attachment.loading=true;renderExtras(node,m);call('requestAttachment',attachment.attachmentId);}};list.append(b);}node.append(list);}
+ if(m.attachments?.length){const list=document.createElement('div');list.className='attachment-list';for(const attachment of m.attachments){const b=document.createElement('button');b.className='attachment-button';const title=document.createElement('strong');title.textContent=attachment.name;const sub=document.createElement('small');sub.textContent=attachment.expired?'历史附件 · 请从原电脑重新获取':attachment.loading?'正在读取…':attachment.error||'点按预览或保存 · '+attachment.path;const preview=attachmentPreviews.get(attachment.attachmentId)||attachmentCache.get(attachment.attachmentId)?.preview;if(preview){const img=document.createElement('img');img.className='attachment-thumbnail';img.alt=attachment.name;const follow=$('chat').scrollHeight-$('chat').clientHeight-$('chat').scrollTop<140;img.onload=()=>{if(follow)scrollEnd();};img.src=preview;b.append(img);}if(preview&&!attachment.expired&&!attachment.loading&&!attachment.error)sub.textContent='点按放大或保存';b.append(title,sub);b.disabled=!!attachment.expired||!!attachment.loading;b.onclick=()=>{if(attachmentCache.has(attachment.attachmentId))showAttachment(attachmentCache.get(attachment.attachmentId));else{attachment.loading=true;renderExtras(node,m);call('requestAttachment',attachment.attachmentId);}};list.append(b);}node.append(list);}
 }
 function closeInteractions(message){for(const m of state.messages){let changed=false;for(const i of m.interactions||[])if(i.state==='pending'||i.state==='submitting'){i.state='closed';i.message=message;changed=true;}const node=findNode(m.id);if(changed&&node)renderExtras(node,m);}}
 function showAttachment(data){$('attachmentTitle').textContent=data.name;$('attachmentInfo').textContent=(data.size/1024).toFixed(1)+' KB'+(data.preview?' · 图片预览':' · 保存后可用手机应用打开');$('attachmentImage').hidden=!data.preview;if(data.preview)$('attachmentImage').src=data.preview;else $('attachmentImage').removeAttribute('src');$('saveAttachment').onclick=()=>call('exportAttachment',data.attachmentId);if(!$('attachmentViewer').open)$('attachmentViewer').showModal();}
@@ -112,11 +113,12 @@ function receiveExtra(type,data){
   const m=state.messages.find(m=>m.id===data.id);if(!m)return true;
   if(type==='interaction'){m.interactions=m.interactions||[];m.interactions.push(data);$('taskLabel').textContent=m.agent+' · 等待你的确认';}
   if(type==='interactionState'){const i=m.interactions?.find(i=>i.token===data.token);if(i)Object.assign(i,data);}
-  if(type==='attachment'){m.attachments=m.attachments||[];if(!m.attachments.some(a=>a.attachmentId===data.attachmentId)){m.attachments.push(data);if(data.remote||data.preview){automaticPreviews.add(data.attachmentId);data.loading=true;call('previewAttachment',data.attachmentId);}}}
+  if(type==='attachment'){m.attachments=m.attachments||[];if(!m.attachments.some(a=>a.attachmentId===data.attachmentId)){m.attachments.push(data);if(isImageAttachment(data)){automaticPreviews.add(data.attachmentId);data.loading=true;call('previewAttachment',data.attachmentId);}}}
   const node=findNode(m.id);if(node)renderExtras(node,m);if(type==='interaction')scrollEnd();persist();return true;
  }
  if(type==='attachmentReady'||type==='attachmentError'){
   const follow=$('chat').scrollHeight-$('chat').clientHeight-$('chat').scrollTop<140;
+  if(type==='attachmentReady'&&data.preview){while(attachmentPreviews.size>=48&&!attachmentPreviews.has(data.attachmentId))attachmentPreviews.delete(attachmentPreviews.keys().next().value);attachmentPreviews.set(data.attachmentId,data.preview);}
   for(const m of state.messages){const a=m.attachments?.find(a=>a.attachmentId===data.attachmentId);if(a){a.loading=false;a.error=data.message||'';const node=findNode(m.id);if(node)renderExtras(node,m);}}
   if(type==='attachmentReady'){while(attachmentCache.size>=2)attachmentCache.delete(attachmentCache.keys().next().value);attachmentCache.set(data.attachmentId,data);if(automaticPreviews.delete(data.attachmentId)){for(const m of state.messages){const node=findNode(m.id);if(node&&m.attachments?.some(a=>a.attachmentId===data.attachmentId))renderExtras(node,m);}if(follow)scrollEnd();}else showAttachment(data);}else{automaticPreviews.delete(data.attachmentId);toast(data.message);}
   return true;
@@ -187,7 +189,7 @@ window.receive=function(type,data){
   else if(type==='key'){$('keyStatus').textContent=data.loaded?'私钥已加密保存':'可选 · 本机加密保存';$('removeKey').hidden=!data.loaded;}
   syncComposer();updateWelcome();
 };
-function startConversation(nextAgent=state.selected){if(busy)return;state.selected=nextAgent;state.messages=[];state.conversationId=cryptoId();$('input').value='';$('input').style.height='auto';render();persist();}
+function startConversation(nextAgent=state.selected){if(busy)return;attachmentPreviews.clear();attachmentCache.clear();automaticPreviews.clear();state.selected=nextAgent;state.messages=[];state.conversationId=cryptoId();$('input').value='';$('input').style.height='auto';render();persist();}
 function conversationHistory(){
   const turns=[];let current=null;
   for(const m of state.messages){
