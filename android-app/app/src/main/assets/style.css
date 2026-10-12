@@ -134,3 +134,11 @@ h2{font-size:19px;letter-spacing:-.4px}.sheet-subtitle{font-size:12px;margin-top
 .attachment-list{margin-block:12px}.attachment-button{padding:12px;border-radius:12px}
 @media(min-width:600px){:root{--page-inset:24px}dialog{border-radius:20px}}
 @media(max-height:620px){header{height:48px}.toolbar{padding-block:0 4px}#welcome{padding-top:12px}.sheet-head{padding-block:8px}.sheet-body{padding-block:8px 12px}}
+.attach-file{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;padding:11px;border:0;border-radius:10px;background:transparent}
+.composer-agent{margin-right:auto;max-width:calc(100% - 104px)}
+.input-files{display:grid;gap:4px;max-height:min(184px,28dvh);overflow:auto;margin-bottom:8px}
+.input-file{display:flex;align-items:center;gap:8px;min-width:0;padding-left:10px;background:var(--muted);border-radius:10px}
+.input-file span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.input-file small{font-size:10px;color:var(--secondary);white-space:nowrap}
+.input-file button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;padding:12px;background:transparent;border:0;border-radius:10px}.input-file .icon{width:16px;height:16px}
+#inputFileStatus{margin:0 0 6px;font-size:12px;line-height:1.5;color:var(--secondary);overflow-wrap:anywhere}
+.sent-files{display:flex;flex-direction:column;gap:4px;align-items:flex-end;max-width:100%;margin-top:6px}.sent-files span{max-width:100%;font-size:11px;line-height:1.5;padding:6px 10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}

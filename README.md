@@ -2,7 +2,7 @@
 
 Android 聊天客户端，通过 SSH 连接电脑上的 AI Agent，支持确认交互、附件、桌面会话连续性及可选电脑持久任务服务。
 
-当前源码版本：**0.5.23**（Android versionCode 49）。最低 Android 8.0 / API 26，目标 API 35。
+当前源码版本：**0.5.24**（Android versionCode 50）。最低 Android 8.0 / API 26，目标 API 35。
 
 ## 项目结构
 
@@ -23,7 +23,7 @@ bash android-app/fetch-dependencies.sh
 bash android-app/build.sh
 ```
 
-产物：`dist/Agent-Control-0.5.23.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
+产物：`dist/Agent-Control-0.5.24.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
 
 Windows 本机构建（PowerShell 7）：
 
@@ -49,6 +49,14 @@ bash android-app/tests/run.sh
 UI 测试需要 Playwright 和 Chrome；实机、SSH、Windows 桌面测试需要自行配置设备、Agent 登录、授权和测试目录。部分历史实机脚本含原开发环境路径，运行前须替换。逻辑测试通过不等于物理手机收发验收。
 
 ## 可选组件
+
+### 手机上传文件对话
+
+连接电脑后，点击输入区的回形针选择文件。选择后即通过 SSH 上传到当前电脑工作目录的 `.agent-control-input` 文件夹；上传完成后可补充文字发送，也可直接发送文件。每条消息最多 4 个文件，单个不超过 20MB，总大小不超过 40MB。发送前可移除附件，附件也会随待发送消息保存。
+
+文件对话使用可读取电脑本地文件的 CLI Agent；自动调度会选择 CLI，并且文件任务不会自动转到桌面应用。实际可处理的文件格式取决于所选 Agent 的能力。上传记录绑定电脑账号和工作目录，切换后需要重新上传。文件保留在电脑工作目录，移除手机草稿附件不会删除电脑上的文件。
+
+UI 上传测试需在 `android-app` 目录运行 `node tests/input-files.test.cjs`，并配置 Playwright 和 Chrome。原生文件限制和跨电脑校验测试纳入 `windows/Build-Android.ps1 -Test` 与 `android-app/tests/run.sh`。
 
 Windows 桌面自动化需要同用户已登录、解锁的会话桥接；SSH/CLI 接入不依赖该桥接。见 [Windows 指南](docs/WINDOWS.md)。
 

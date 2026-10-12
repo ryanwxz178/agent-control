@@ -15,6 +15,10 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
     private android.widget.FrameLayout frame;
     private PocketEngine engine;
     private SecureStore store;
+    private final InputFiles inputFiles=new InputFiles();
+    private volatile boolean selectingFiles;
+    private String pickerComputer="";
+    private int pickerLimit=4;
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private byte[] privateKey;
     private volatile JSONObject pendingConnection;
@@ -62,6 +66,7 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
                 if(!url.equals("file:///android_asset/index.html"))return;
                 applySystemTheme();
                 io.execute(()->{try{
+                    inputFiles.restore(store.get("input-files"));
                     String data=store.get("state");event("restore",data.isEmpty()?new JSONObject():new JSONObject(data));
                     android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);
                     event("appInfo",new JSONObject().put("versionName",info.versionName).put("versionCode",info.versionCode));
@@ -139,8 +144,19 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
         }
         @JavascriptInterface public void taskRequest(String raw){engine.taskRequest(raw);}
         @JavascriptInterface public void forgetAutoConnect(){pendingConnection=null;io.execute(()->{try{store.put("auto-connect","");event("credentials",new JSONObject().put("saved",false));}catch(Exception e){error("清除自动连接凭据失败");}});}
-        @JavascriptInterface public void connect(String raw){io.execute(()->{try{JSONObject p=new JSONObject(raw);String saved=store.get("auto-connect");if(p.optBoolean("autoConnect")&&p.optString("password").isEmpty()&&!saved.isEmpty()){JSONObject previous=new JSONObject(saved);if(p.optString("host").trim().equals(previous.optString("host").trim())&&p.optString("user").trim().equals(previous.optString("user").trim())&&p.optInt("port",22)==previous.optInt("port",22))p.put("password",previous.optString("password"));}pendingConnection=p;if(!p.optBoolean("autoConnect"))store.put("auto-connect","");engine.connect(p,privateKey);}catch(Exception e){error(e.getMessage());}});}
-        @JavascriptInterface public void send(String raw){try{engine.send(new JSONObject(raw));}catch(Exception e){error(e.getMessage());}}
+        @JavascriptInterface public void connect(String raw){if(selectingFiles){error("请等待文件上传完成再切换电脑");return;}io.execute(()->{try{JSONObject p=new JSONObject(raw);String saved=store.get("auto-connect");if(p.optBoolean("autoConnect")&&p.optString("password").isEmpty()&&!saved.isEmpty()){JSONObject previous=new JSONObject(saved);if(p.optString("host").trim().equals(previous.optString("host").trim())&&p.optString("user").trim().equals(previous.optString("user").trim())&&p.optInt("port",22)==previous.optInt("port",22))p.put("password",previous.optString("password"));}pendingConnection=p;if(!p.optBoolean("autoConnect"))store.put("auto-connect","");engine.connect(p,privateKey);}catch(Exception e){error(e.getMessage());}});}
+        @JavascriptInterface public void send(String raw){
+            JSONObject request;try{request=new JSONObject(raw);}catch(Exception e){error("消息格式无效");return;}
+            io.execute(()->{try{inputFiles.attach(request,engine.computerKey());engine.send(request);}catch(Exception e){try{event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("displayPrompt",request.optString("prompt"))).put("uploads",request.optJSONArray("uploads")));event("busy",new JSONObject().put("value",false));}catch(Exception ignored){}error(e.getMessage());}});
+        }
+        @JavascriptInterface public void pickFiles(int available){
+            runOnUiThread(()->{if(selectingFiles)return;if(!engine.ssh.connected()){error("请先连接电脑再上传文件");return;}if(available<1||available>4){error("每条消息最多上传 4 个文件");return;}
+                selectingFiles=true;pickerComputer=engine.computerKey();pickerLimit=available;
+                Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.setType("*/*");intent.addCategory(Intent.CATEGORY_OPENABLE);intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
+                try{event("inputFilesBusy",new JSONObject().put("value",true).put("message","正在选择文件…"));startActivityForResult(intent,30);}catch(Exception e){selectingFiles=false;error("无法打开文件选择器");try{event("inputFilesBusy",new JSONObject().put("value",false));}catch(Exception ignored){}}
+            });
+        }
+        @JavascriptInterface public void removeInputFile(String id){io.execute(()->{try{inputFiles.remove(id);store.put("input-files",inputFiles.save());}catch(Exception e){error("移除附件失败");}});}
         @JavascriptInterface public void copyText(String text){
             if(text==null||text.length()>150000)return;
             runOnUiThread(()->((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("Agent 回复",text)));
@@ -153,7 +169,7 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
         @JavascriptInterface public void operateDesktop(String token,String control,String value){engine.operateDesktop(token,control,value);}
         @JavascriptInterface public void respond(String token,String raw){try{if(raw.length()>40000)return;engine.respond(token,new JSONObject(raw));}catch(Exception e){error(e.getMessage());}}
         @JavascriptInterface public void previewAttachment(String id){
-            Attachments.FileRef file=engine.attachments.get(id);if(file!=null&&(file.preview||RemoteImages.allowed(file.path)))engine.download(id);
+            Attachments.FileRef file=engine.attachments.get(id);if(file!=null&&(file.preview||RemoteImages.allowed(file.path)||file.name.matches("(?i).*\\.(png|jpe?g|webp|gif|bmp)$")))engine.download(id);
         }
         @JavascriptInterface public void requestAttachment(String id){
             Attachments.FileRef file=engine.attachments.get(id);if(file==null){error("附件链接已失效，请重新获取回复");return;}
@@ -174,6 +190,26 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(request==30){
+            if(result!=RESULT_OK||data==null){selectingFiles=false;try{event("inputFilesBusy",new JSONObject().put("value",false));}catch(Exception ignored){}return;}
+            java.util.List<android.net.Uri> selected=new java.util.ArrayList<>();
+            if(data.getClipData()!=null)for(int i=0;i<data.getClipData().getItemCount();i++)selected.add(data.getClipData().getItemAt(i).getUri());else if(data.getData()!=null)selected.add(data.getData());
+            io.execute(()->{try{
+                if(selected.size()>pickerLimit)throw new IOException("本次最多选择 "+pickerLimit+" 个文件");
+                for(android.net.Uri uri:selected){
+                    if(!pickerComputer.equals(engine.computerKey()))throw new IOException("电脑连接已改变，请重新选择文件");
+                    String name="文件";long declared=-1;
+                    try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME,android.provider.OpenableColumns.SIZE},null,null,null)){
+                        if(cursor!=null&&cursor.moveToFirst()){int n=cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME),s=cursor.getColumnIndex(android.provider.OpenableColumns.SIZE);if(n>=0&&!cursor.isNull(n))name=cursor.getString(n);if(s>=0&&!cursor.isNull(s))declared=cursor.getLong(s);}
+                    }
+                    if(declared>InputFiles.LIMIT)throw new IOException(name+" 超过 20MB");
+                    event("inputFilesBusy",new JSONObject().put("value",true).put("message","正在上传："+name));
+                    byte[] bytes;try(InputStream input=getContentResolver().openInputStream(uri)){bytes=InputFiles.read(input);}
+                    String mime=getContentResolver().getType(uri);JSONObject uploaded=engine.uploadInput(name,mime==null?"application/octet-stream":mime,bytes);
+                    JSONObject file=inputFiles.add(uploaded);store.put("input-files",inputFiles.save());event("inputFileReady",file);
+                }
+            }catch(Exception e){error("上传文件失败："+e.getMessage());}finally{selectingFiles=false;try{event("inputFilesBusy",new JSONObject().put("value",false));}catch(Exception ignored){}}});return;
+        }
         if(request==20){
             byte[] bytes=exportBytes;String name=exportName;exportBytes=null;exportName=null;exporting=false;
             if(result!=RESULT_OK||data==null||bytes==null)return;

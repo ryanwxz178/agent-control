@@ -125,17 +125,17 @@ final class PocketEngine {
     }
     void send(JSONObject request){
         if(profile.optBoolean("taskService")){
-            if(!ssh.connected()||!serviceReady){emit("serviceError","message","持久任务服务未就绪，本条消息尚未提交；请重新连接或检查 Java 17。");try{host.event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("prompt")));}catch(Exception ignored){}return;}
+            if(!ssh.connected()||!serviceReady){emit("serviceError","message","持久任务服务未就绪，本条消息尚未提交；请重新连接或检查 Java 17。");try{host.event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("displayPrompt",request.optString("prompt"))).put("uploads",request.optJSONArray("uploads")));}catch(Exception ignored){}return;}
             actions.execute(()->{try{service.request(new JSONObject().put("op","submit").put("request",request));service.snapshot();}catch(Exception e){emit("serviceError","message",message(e));}finally{emit("busy","value",false);}});return;
         }
         if(!ssh.connected()){
             emit("connection","status","连接已断开");
-            try{host.event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("prompt")));}catch(Exception ignored){}
+            try{host.event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("displayPrompt",request.optString("prompt"))).put("uploads",request.optJSONArray("uploads")));}catch(Exception ignored){}
             emit("error","message","连接已断开，本条消息尚未发送，已保留在输入框。正在尝试恢复连接。");
             emit("busy","value",busy.get());checkConnection();return;
         }
         if(!busy.compareAndSet(false,true)){
-            try{host.event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("prompt")));}catch(Exception ignored){}
+            try{host.event("rejected",new JSONObject().put("messageId",request.optString("messageId")).put("prompt",request.optString("displayPrompt",request.optString("prompt"))).put("uploads",request.optJSONArray("uploads")));}catch(Exception ignored){}
             emit("error","message","正在检查连接或执行任务，本条消息尚未发送，已保留在输入框。");emit("busy","value",busy.get());return;
         }
         cancelled.set(false);emit("busy","value",true);
@@ -145,15 +145,17 @@ final class PocketEngine {
                 if(prompt.trim().isEmpty()||prompt.length()>20000||history.length()>60000)throw new IllegalArgumentException("消息过长或为空");
                 boolean write=request.optBoolean("write"), desktop=true, hostPermissions=request.optBoolean("hostPermissions");
                 String mode=request.optString("accessMode","auto");
+                boolean hasFiles=request.optJSONArray("inputFiles")!=null&&request.getJSONArray("inputFiles").length()>0;
+                if(hasFiles&&mode.equals("desktop"))throw new IllegalArgumentException("文件对话需要使用可读取本地文件的 CLI Agent，请切换接入方式");
                 if(!mode.equals("auto")&&!mode.equals("desktop")&&!mode.equals("cli"))throw new IllegalArgumentException("未知接入方式");
                 String context=history.isEmpty()?prompt:"当前任务：\n"+prompt+"\n\n此前对话（仅供上下文）：\n"+history;
                 String directory=request.optString("directory",profile.optString("directory"));
                 if(!Agent.absoluteDirectory(directory,inventory.os))throw new IllegalArgumentException("工作目录须为电脑上的绝对路径：Windows 如 C:\\Users\\你的用户名\\project，macOS/Linux 如 /Users/name/project");
-                TaskRouter.Runner runner=(a,text,allowWrite,label)->runAgent(a,text,allowWrite,label,directory,!mode.equals("cli"),hostPermissions,request.optString("conversationId"),id.equals("auto")?text:prompt);
+                TaskRouter.Runner runner=(a,text,allowWrite,label)->runAgent(a,text,allowWrite,label,directory,!mode.equals("cli")&&!hasFiles,hostPermissions,request.optString("conversationId"),id.equals("auto")?text:prompt);
                 if(id.equals("auto")){
                     List<Agent> eligible=new ArrayList<>();
                     for(Agent a:inventory.agents.values()){
-                        if(!a.supported())continue;
+                        if(!a.supported()||(hasFiles&&a.desktop()))continue;
                         if(mode.equals("desktop")){a=inventory.desktopAgent(a.id);if(a==null)continue;}
                         if(mode.equals("cli")&&a.desktop())continue;
                         if(!a.kind.equals("dsh")||hostPermissions)eligible.add(a);
@@ -162,7 +164,7 @@ final class PocketEngine {
                 }else{
                     Agent agent=inventory.agents.get(id);
                     if(agent==null)throw new IllegalArgumentException("该 Agent 不在当前电脑的安装列表中");
-                    agent=chooseAccess(inventory,agent,mode);
+                    agent=chooseAccess(inventory,agent,hasFiles?"cli":mode);
                     runner.run(agent,context,write,"回复");
                 }
             }catch(EventDecoder.DesktopEnded e){emit("notice","message","原桌面会话已确认结束。");}
@@ -319,7 +321,22 @@ final class PocketEngine {
         String script=(shared+(host.asset("desktop-session.js")+"\n"+host.asset("desktop-panel.js"))).replace("__REQUEST__",request.toString());
         ssh.run("/usr/bin/osascript -l JavaScript -",script,line->{if(!line.startsWith("{"))return;JSONObject event=new JSONObject(line);if(event.optString("type").equals("error"))throw new IllegalStateException(event.optString("text"));result.accept(event);},new AtomicBoolean(),30000);
     }
-    private String computerKey(){return profile.optString("host")+"|"+profile.optInt("port",22)+"|"+profile.optString("user");}
+    String computerKey(){return profile.optString("host")+"|"+profile.optInt("port",22)+"|"+profile.optString("user");}
+    JSONObject uploadInput(String name,String mime,byte[] bytes)throws Exception{
+        if(!ssh.connected())throw new IllegalStateException("请先连接电脑再上传文件");
+        if(bytes.length>20*1024*1024)throw new IllegalArgumentException("单个文件不能超过 20MB");
+        String computer=computerKey(),directory=profile.optString("directory"),os=inventory.os;
+        if(!Agent.absoluteDirectory(directory,os))throw new IllegalArgumentException("请先设置有效的电脑工作目录");
+        String safe=name.replaceAll("[^\\p{L}\\p{N}._ -]","_").replaceAll("[ .]+$","");if(safe.isEmpty())safe="file";if(safe.length()>120)safe=safe.substring(safe.length()-120);
+        String folder=directory.replace('\\','/').replaceAll("/+$","")+"/.agent-control-input";
+        String path=folder+"/"+UUID.randomUUID()+"-"+safe;
+        String mkdir=os.equals("Windows")?Agent.powershell("New-Item -ItemType Directory -Force -Path "+Agent.psQuote(folder)+" | Out-Null"):"mkdir -p -- "+Agent.quote(folder)+" && chmod 700 "+Agent.quote(folder);
+        ssh.run(mkdir,"",line->{},new AtomicBoolean(),15000);
+        if(!computer.equals(computerKey()))throw new IllegalStateException("电脑连接已改变，请重新上传");
+        ssh.upload(path,bytes);
+        if(!computer.equals(computerKey()))throw new IllegalStateException("电脑连接已改变，请重新上传");
+        return new JSONObject().put("name",name).put("mime",mime).put("size",bytes.length).put("path",path).put("computer",computer).put("directory",directory);
+    }
     void respond(String token,JSONObject answer){if(remote("respond",fields("token",token,"answer",answer),"token",token))return;actions.execute(()->{try{interactions.respond(token,answer);}catch(Exception e){emit("notice","message",message(e));}});}
     void download(String id){downloading.incrementAndGet();actions.execute(()->{try{
         Attachments.FileRef file=attachments.get(id);
