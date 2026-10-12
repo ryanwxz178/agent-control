@@ -10,7 +10,7 @@ const bridge=window.Pocket;
 const call=(name,...args)=>{if(!bridge){toast('预览界面；请安装 APK 后连接电脑');return false;}bridge[name](...args);return true;};
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,6000);}
 function persist(){clearTimeout(persistTimer);persistTimer=setTimeout(()=>{const snapshot={...state,messages:state.messages.slice(-80).map(m=>({...m,desktop:false,interactions:(m.interactions||[]).map(i=>({title:i.title,state:'closed',message:'历史确认不可再次操作'})),attachments:(m.attachments||[]).map(a=>({...a,expired:true}))}))};let raw=JSON.stringify(snapshot);while(raw.length>280000&&snapshot.messages.length){snapshot.messages.shift();raw=JSON.stringify(snapshot);}call('save',raw);},350);}
-function scrollEnd(){const chat=$('chat');chat.scrollTop=chat.scrollHeight;$('jumpLatest').hidden=true;}
+function scrollEnd(){const chat=$('chat');chat.scrollTop=state.messages.length?chat.scrollHeight:0;$('jumpLatest').hidden=true;}
 function icon(name){const img=document.createElement('img');img.className='icon';img.src='icons/'+name+'.svg';img.alt='';img.setAttribute('aria-hidden','true');return img;}
 function syncComposer(){$('send').disabled=busy||!$('input').value.trim();}
 function updateWelcome(){$('welcomeConnect').hidden=connected;$('welcomeText').textContent=connected?'电脑已连接，选择 Agent 或直接开始。':'连接电脑，在这里接着聊。';$('agentSubline').textContent=connected?'已连接 '+state.agents.length+' 个 Agent':'选择电脑上的 Agent';}
