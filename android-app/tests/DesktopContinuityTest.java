@@ -8,6 +8,10 @@ import java.util.concurrent.atomic.*;
 /** Real engine routing, with a transport fixture; does not operate the user's desktop. */
 public final class DesktopContinuityTest {
     public static void main(String[] args)throws Exception{
+        if(!SshTransport.sftpPath("C:/Users/steam/.agent-control/runtime").equals("/C:/Users/steam/.agent-control/runtime") ||
+           !SshTransport.sftpPath("D:\\应用\\file.txt").equals("/D:/应用/file.txt") ||
+           !SshTransport.sftpPath("/home/user/file.txt").equals("/home/user/file.txt") ||
+           !SshTransport.sftpPath("/C:/Users/steam/file.txt").equals("/C:/Users/steam/file.txt"))throw new AssertionError("SFTP absolute paths must not resolve under the remote home directory");
         Path assets=Path.of(args[0],"android-app/app/src/main/assets");
         List<JSONObject> sent=new ArrayList<>();
         for(String conversation:List.of("phone-one","phone-one","phone-two")){
@@ -24,7 +28,7 @@ public final class DesktopContinuityTest {
                 }
             };
             PocketEngine engine=new PocketEngine(new PocketEngine.Host(){
-                public String asset(String name)throws Exception{return Files.readString(assets.resolve(name));}
+                public String asset(String name)throws Exception{return Files.readString(assets.resolve(name)).replace("\r\n","\n");}
                 public boolean trust(String h,String pin){return false;}
                 public void event(String type,JSONObject data){if(type.equals("error"))errors.add(data.optString("message"));if(type.equals("busy")&&!data.optBoolean("value")&&sending.get())finished.countDown();}
             },transport);

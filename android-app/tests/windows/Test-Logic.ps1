@@ -21,6 +21,17 @@ function Node($Index,$Parent,$Role,$Name,$Value='') { return [pscustomobject]@{i
 function Tree {
     return @((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' '你好'),(Node 3 2 'Text' '你好'),(Node 4 1 'Text' '你好'),(Node 5 1 'Text' '测试成功'),(Node 6 1 'Button' '朗读'))
 }
+$teleNodes=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' 'TeleAgent'),(Node 2 1 'Edit' '' ''),(Node 3 1 'Text' '手机请求'),(Node 4 1 'Text' '2026-10-12 09:18:22'),(Node 5 1 'Button' '复制'),(Node 6 1 'Button' '已完成本轮思考与执行 09:18 完成 耗时 7.0 秒'),(Node 7 1 'Text' 'TELE-OK'),(Node 8 1 'Button' '仅复制文本'),(Node 9 1 'Button' '带格式复制'),(Node 10 1 'Text' '2026-10-12 09:18:29'))
+$teleNodes[1].automationId='RootWebArea'
+$teleReply=Get-ReplyState $teleNodes $profiles.teleagent '手机请求'
+Assert ($teleReply.sent -and $teleReply.complete -and $teleReply.text -eq 'TELE-OK') 'TeleAgent observed completed header and copy toolbar isolate the answer from timestamps'
+$teleReply=Get-ReplyState $teleNodes[0..7] $profiles.teleagent '手机请求'
+Assert (!$teleReply.complete) 'TeleAgent completed header without reply toolbar cannot finish'
+$teleBusy=@($teleNodes)+(Node 11 1 'Button' '停止执行')
+$teleReply=Get-ReplyState $teleBusy $profiles.teleagent '手机请求'
+Assert (!$teleReply.complete) 'TeleAgent generation remains incomplete even with previous completion controls'
+$teleReply=Get-ReplyState $teleNodes $profiles.teleagent '其他请求'
+Assert (!$teleReply.sent -and !$teleReply.complete) 'TeleAgent previous conversation never satisfies a different phone request'
 $nodes=Tree
 $reply=Get-ReplyState $nodes $profiles.doubao '你好'
 Assert ($reply.sent -and $reply.complete -and $reply.text -eq '测试成功') 'confirmed user message and completed reply'
@@ -130,3 +141,16 @@ $duplicate=@(@{index=0;parent=-1;role='Document';name='';automationId='doc_edito
 $rejected=$false
 try { Get-ReplyState $duplicate $profiles.doubao '重复请求' | Out-Null } catch { $rejected=$true }
 Assert $rejected 'duplicate visible request rejected rather than choosing another turn'
+
+# Execute the production client's payload decoding and queue construction without a broker or UI input.
+$clientSource=Get-Content "$repo/android-app/app/src/main/assets/desktop-windows-client.ps1" -Raw -Encoding UTF8
+$payload=@{app='teleagent';prompt='续聊当前手机消息';conversationId='phone-one'}|ConvertTo-Json -Compress
+$encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+$requestLine=[regex]::Match($clientSource,'(?m)^\s+\$request = .*ConvertFrom-Json\r?$').Value
+$bodyLine=[regex]::Match($clientSource,'(?m)^\s+\$body = @\{.*\}\r?$').Value
+Assert ($requestLine -and $bodyLine) 'production Windows client queue construction found'
+$status=@{brokerId='test-broker'};$id='test-request'
+Invoke-Expression $requestLine.Replace('__REQUEST_BASE64__',$encoded)
+Invoke-Expression $bodyLine
+$queued=$body|ConvertTo-Json -Compress|ConvertFrom-Json
+Assert ($queued.conversationId -eq 'phone-one' -and $queued.prompt -eq '续聊当前手机消息' -and $queued.app -eq 'teleagent') 'production Windows queue preserves phone conversation ID and current prompt'

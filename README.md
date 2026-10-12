@@ -2,7 +2,7 @@
 
 Android 聊天客户端，通过 SSH 连接电脑上的 AI Agent，支持确认交互、附件、桌面会话连续性及可选电脑持久任务服务。
 
-当前源码版本：**0.5.17**（Android versionCode 43）。最低 Android 8.0 / API 26，目标 API 35。
+当前源码版本：**0.5.19**（Android versionCode 45）。最低 Android 8.0 / API 26，目标 API 35。
 
 ## 项目结构
 
@@ -23,7 +23,16 @@ bash android-app/fetch-dependencies.sh
 bash android-app/build.sh
 ```
 
-产物：`dist/Agent-Control-0.5.17.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
+产物：`dist/Agent-Control-0.5.19.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
+
+Windows 本机构建（PowerShell 7）：
+
+```powershell
+pwsh -NoProfile -File windows/Setup-BuildTools.ps1
+pwsh -NoProfile -File windows/Build-Android.ps1 -Test
+```
+
+本机接入步骤、支持范围与实机验证限制见 [本机 Windows 接入](docs/LOCAL-WINDOWS-SETUP.md)。
 
 首次构建会生成本地签名密钥；该签名不能覆盖安装原开发者签名的版本。保持已有安装的升级需要使用原签名，密钥通过独立安全方式交接。
 

@@ -1,4 +1,4 @@
-﻿param([ValidateSet('workbuddy','doubao','deepseek','claude','codex')][string]$App='workbuddy',[switch]$Snapshot)
+﻿param([ValidateSet('workbuddy','teleagent','doubao','deepseek','claude','codex')][string]$App='workbuddy',[switch]$Snapshot)
 $ErrorActionPreference='Stop'
 . "$PSScriptRoot\Desktop.ps1"
 $profiles=Get-Content -LiteralPath "$PSScriptRoot\profiles.json" -Raw -Encoding UTF8 | ConvertFrom-Json

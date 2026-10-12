@@ -29,5 +29,5 @@ if ($StartAtLogon) {
 Write-Host "Installed to $bin. SSH must use the same Windows account."
 if (!$NoStart) {
     if ([Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0 -or ![Environment]::UserInteractive) { Write-Host 'Start Bridge.ps1 from your signed-in desktop, not from SSH.' }
-    else { Start-Process -FilePath $exe -ArgumentList $arguments }
+    else { Start-Process -FilePath $exe -ArgumentList $arguments -WindowStyle Hidden }
 }

@@ -19,7 +19,7 @@ if (Test-Path -LiteralPath $statusFile) {
         if ($status.protocol -eq 1 -and $status.userSid -eq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -and
             ([DateTime]::UtcNow - [DateTime]::Parse($status.updatedUtc).ToUniversalTime()).TotalSeconds -lt 15) {
             foreach ($app in $status.apps) {
-                if ($app.id -in @('workbuddy','doubao','deepseek','claude','codex') -and $app.path -and (Test-Path -LiteralPath $app.path -PathType Leaf)) {
+                if ($app.id -in @('workbuddy','teleagent','doubao','deepseek','claude','codex') -and $app.path -and (Test-Path -LiteralPath $app.path -PathType Leaf)) {
                     [Console]::WriteLine(('ORCA_APP|{0}|{0}' -f $app.id))
                 }
             }

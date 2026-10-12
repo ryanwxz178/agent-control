@@ -20,7 +20,8 @@ final class PersistentClient {
         String explicit=profile.optString("serviceJava").trim();
         List<String> output=new ArrayList<>();
         if(os.equals("Windows")){
-            String command=explicit.isEmpty()?"$j=(Get-Command java.exe -ErrorAction Stop).Source": "$j="+Agent.psQuote(explicit);
+            String command=explicit.isEmpty()?"$j=$null; foreach($h in @($env:JAVA_HOME,[Environment]::GetEnvironmentVariable('JAVA_HOME','User'),[Environment]::GetEnvironmentVariable('JAVA_HOME','Machine'))){if($h -and (Test-Path -LiteralPath ($h+'/bin/java.exe'))){$j=$h+'/bin/java.exe';break}}; if(!$j){$j=(Get-Command java.exe -ErrorAction SilentlyContinue).Source}": "$j="+Agent.psQuote(explicit);
+            command+="; if(!$j -or !(Test-Path -LiteralPath $j -PathType Leaf)){throw 'Java 路径不存在，请检查高级设置中的电脑 Java 17 路径'}";
             ssh.run(Agent.powershell(command+"; New-Item -ItemType Directory -Force -Path "+Agent.psQuote(root)+" | Out-Null; Write-Output ('AGENT_JAVA|'+$j)"),"",output::add,new AtomicBoolean(),20000);
         }else{
             String directory=profile.optString("directory",inventory.home);

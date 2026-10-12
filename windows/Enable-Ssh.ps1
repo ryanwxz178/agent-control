@@ -1,19 +1,31 @@
-﻿param([Parameter(Mandatory=$true)][string[]]$AllowedAddresses)
+﻿param([Parameter(Mandatory=$true)][string[]]$AllowedAddresses,[switch]$UseWin32OpenSsh)
 $ErrorActionPreference='Stop'
 $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run this script in an elevated Windows PowerShell window.' }
 if ($AllowedAddresses.Count -eq 0 -or @($AllowedAddresses | Where-Object { $_ -in @('Any','*','0.0.0.0/0','::/0') }).Count) { throw 'Specify trusted client IP addresses or private network subnets.' }
 # Preserve an existing GitHub Win32-OpenSSH installation as well as Windows capabilities.
 if (!(Get-Service sshd -ErrorAction SilentlyContinue)) {
-    $cap=Get-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0'
-    if ($cap.State -ne 'Installed') { Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null }
+    if ($UseWin32OpenSsh) { & "$PSScriptRoot/Install-Win32OpenSsh.ps1" }
+    else {
+        try {
+            $cap=Get-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0'
+            if ($cap.State -ne 'Installed') { Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null }
+        } catch {
+            Write-Warning ('Windows optional-component installation failed: '+$_.Exception.Message+'. Using the verified Microsoft Win32-OpenSSH package.')
+            & "$PSScriptRoot/Install-Win32OpenSsh.ps1"
+        }
+    }
 }
 $service=Get-CimInstance Win32_Service -Filter "Name='sshd'"
+if (!$service) { throw 'OpenSSH installation did not create the sshd service.' }
 $match=[regex]::Match($service.PathName,'^\s*(?:"([^"]+)"|(\S+))')
 $serverPath=if($match.Groups[1].Success){$match.Groups[1].Value}else{$match.Groups[2].Value}
 $serverPath=[Environment]::ExpandEnvironmentVariables($serverPath)
 $sshDirectory=Split-Path $serverPath
 $config=Join-Path $env:ProgramData 'ssh\sshd_config'
+# The first service start creates the default config and host keys. Patch SFTP
+# after that generation as well as for an already configured server.
+if (!(Test-Path -LiteralPath $config)) { Start-Service sshd }
 $restart=$false
 if ((Test-Path $config) -and (Test-Path "$sshDirectory\sftp-server.exe")) {
     $text=[IO.File]::ReadAllText($config)

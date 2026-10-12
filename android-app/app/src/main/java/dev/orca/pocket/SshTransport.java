@@ -136,6 +136,7 @@ public class SshTransport implements AutoCloseable {
         }finally{timeout.cancel(false);active.remove(c);c.disconnect();}
     }
     public org.json.JSONArray listDownloads(String path)throws Exception{
+        path=sftpPath(path);
         Session s=session;if(s==null||!s.isConnected())throw new IOException("请先连接电脑");ChannelSftp c=(ChannelSftp)s.openChannel("sftp");ScheduledFuture<?> timeout=timer.schedule(c::disconnect,20000,TimeUnit.MILLISECONDS);
         try{c.connect(10000);java.util.List<ChannelSftp.LsEntry> files=new ArrayList<>();
             for(Object item:c.ls(path)){ChannelSftp.LsEntry entry=(ChannelSftp.LsEntry)item;if(entry.getAttrs().isReg()&&!entry.getFilename().startsWith("."))files.add(entry);}
@@ -144,6 +145,7 @@ public class SshTransport implements AutoCloseable {
         }finally{timeout.cancel(false);c.disconnect();}
     }
     public byte[] download(String path,int limit)throws Exception{
+        path=sftpPath(path);
         Session s=session;if(s==null||!s.isConnected())throw new IOException("请先连接原电脑");
         ChannelSftp c=(ChannelSftp)s.openChannel("sftp");
         ScheduledFuture<?> timeout=timer.schedule(c::disconnect,45000,TimeUnit.MILLISECONDS);
@@ -157,12 +159,19 @@ public class SshTransport implements AutoCloseable {
     }
     /** Publish versioned runtime files without exposing an SSH command containing their bytes. */
     public void upload(String path,byte[] bytes)throws Exception{
+        path=sftpPath(path);
         Session s=session;if(s==null||!s.isConnected())throw new IOException("请先连接电脑");
         ChannelSftp c=(ChannelSftp)s.openChannel("sftp");
         ScheduledFuture<?> timeout=timer.schedule(c::disconnect,60000,TimeUnit.MILLISECONDS);
         String temporary=path+"."+UUID.randomUUID()+".tmp";
         try{c.connect(15000);c.put(new ByteArrayInputStream(bytes),temporary);c.chmod(0600,temporary);c.rename(temporary,path);}
+        catch(SftpException e){throw new IOException("无法上传电脑文件 "+path+"："+e.getMessage(),e);}
         finally{try{if(c.isConnected())c.rm(temporary);}catch(Exception ignored){}timeout.cancel(false);c.disconnect();}
+    }
+    /** JSch resolves paths without a leading slash against the remote home directory. */
+    static String sftpPath(String path){
+        if(path.matches("^[A-Za-z]:[\\\\/].*"))return "/"+path.replace('\\','/');
+        return path;
     }
     public void cancel(){for(ChannelExec c:active){try{c.sendSignal("INT");}catch(Exception ignored){} c.disconnect();}}
     private static String protocolLine(StringBuilder value){

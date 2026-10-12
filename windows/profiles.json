@@ -39,6 +39,20 @@
     "sendClass": "(?:^| )!?bg-g-send-msg-btn-bg(?: |$)",
     "replyDecorationClass": "(?s)^(?=.*(?:^|\\s)self-center(?:\\s|$))(?=.*(?:^|\\s)whitespace-nowrap(?:\\s|$))(?=.*(?:^|\\s)text-dbx-text-secondary(?:\\s|$))(?=.*(?:^|\\s)mr-14(?:\\s|$)).*$"
   },
+  "teleagent": {
+    "processNames": ["TeleAgent"],
+    "windowTitle": "^TeleAgent$",
+    "newChat": "^新建任务$",
+    "send": "^运行$",
+    "busy": "^(停止|停止生成|停止执行|停止任务|Stop|Stop generating)$",
+    "complete": "^已完成本轮思考与执行(?: .*)?$",
+    "blank": "^Shift/Ctrl \\+ Enter 换行，Enter 发送$",
+    "chatId": "RootWebArea",
+    "editorId": "",
+    "replyAfterComplete": true,
+    "replyEndName": "^仅复制文本$",
+    "launchArgs": ["--force-renderer-accessibility=complete", "--enable-features=UiaProvider"]
+  },
   "deepseek": {
     "processNames": [
       "DeepSeek Harness"

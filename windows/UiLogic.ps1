@@ -88,7 +88,7 @@ function Get-ReplyState($Nodes, $Adapter, [string]$Prompt) {
     $boundary=$markers[0].index
     if ($Adapter.replyAfterComplete) {
         # WorkBuddy renders its completed header before the answer, then a copy toolbar.
-        $ends=@($items | Where-Object { $_.index -gt $boundary -and $_.role -eq 'Button' -and $Adapter.replyEndClass -and $_.className -match $Adapter.replyEndClass })
+        $ends=@($items | Where-Object { $_.index -gt $boundary -and (Test-AdapterButton $_ $Adapter.replyEndName $Adapter.replyEndClass) })
         if ($ends.Count -eq 0) { return @{sent=$true;complete=$false;text='';busy=$busy} }
         $parts=@($textNodes | Where-Object { $_.index -gt $boundary -and $_.index -lt $ends[0].index -and !(Test-ReplyDecoration $_ $Nodes $Adapter) })
         $reply='';$previous=$null
