@@ -1,5 +1,6 @@
 ﻿param([string]$Root = (Join-Path $env:LOCALAPPDATA 'OrcaPocket\bridge'))
 $ErrorActionPreference='Stop'
+if (!$PSBoundParameters.ContainsKey('Root')) { $Root=Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+'\bridge') }
 $utf8=[Text.UTF8Encoding]::new($false)
 if ($env:OS -ne 'Windows_NT' -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') { throw 'Use Windows PowerShell 5.1 -STA in your interactive desktop session.' }
 . "$PSScriptRoot\Desktop.ps1"

@@ -6,7 +6,7 @@ if ($LogPath) { Start-Transcript -Path $LogPath -Force | Out-Null }
 try {
 & "$PSScriptRoot/Enable-Ssh.ps1" -AllowedAddresses $AllowedAddresses -UseWin32OpenSsh:$UseWin32OpenSsh
 & "$PSScriptRoot/Install.ps1" -NoStart
-$bin=Join-Path $env:LOCALAPPDATA 'OrcaPocket/bin'
+$bin=Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+'\bin')
 if ((Test-Path "$PSScriptRoot/apps.json") -and !(Test-Path "$bin/apps.json")) { Copy-Item "$PSScriptRoot/apps.json" "$bin/apps.json" }
 Write-Output 'SSH and bridge files installed. Start Start-Bridge.cmd from your normal, non-administrator desktop session.'
 Write-Output ('SSH user: '+[Security.Principal.WindowsIdentity]::GetCurrent().Name)

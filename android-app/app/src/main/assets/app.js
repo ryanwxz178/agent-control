@@ -134,6 +134,8 @@ function agentList(){
   if(!connected){const p=document.createElement('p');p.className='hint';p.textContent='连接电脑后，在这里显示检测到的 Agent。';list.append(p);}
 }
 window.receive=function(type,data){
+  if(type==='appInfo'){$('appVersion').textContent='APP 版本：'+data.versionName+'（'+data.versionCode+'）';return;}
+  if(type==='credentials'){$('credentialStatus').textContent=data.saved?'登录凭据已在手机加密保存，下次打开自动连接。关闭开关可清除。':'成功连接后在手机加密保存，下次打开自动连接。关闭即清除保存的连接凭据。';$('password').placeholder=data.saved?'已保存 · 留空使用该电脑的已保存密码':'输入电脑登录密码或私钥口令';return;}
   if(receiveExtra(type,data))return;
   if(type==='theme'){setTheme(data.dark);return;}
   if(type==='restore'){

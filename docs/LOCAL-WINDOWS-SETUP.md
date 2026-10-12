@@ -1,6 +1,10 @@
 # 本机 Android 与 Windows 接入
 
-本次产物：`dist/Agent-Control-0.5.19.apk`，Android 8.0 及以上。该修复版延用上一版本机签名，可覆盖本次提供的 0.5.17 / 0.5.18 并保留手机配置。若手机已装其他签名的同包名应用，需要先备份手机应用内配置，再自行卸载旧版后安装。本地签名材料位于 `android-app/.signing`，不提交或分享。
+本次产物：`dist/Agent-Control-0.5.20.apk`，Android 8.0 及以上。该修复版延用上一版本机签名，可覆盖本次提供的旧版并保留手机配置。若手机已装其他签名的同包名应用，需要先备份手机应用内配置，再自行卸载旧版后安装。本地签名材料位于 `android-app/.signing`，不提交或分享。
+
+0.5.20 将 Windows 桥接安装与队列迁至 `%ProgramData%\AgentControl\<当前用户 SID>`，目录 ACL 仅允许该用户和 SYSTEM，确保本机桌面和 SSH 会话能读取同一队列；客户端保留旧目录回退。通过真实 SSH 和 App 使用的 SFTP 脚本传输代码确认检测到 Claude、Codex CLI，以及 WorkBuddy、豆包、TeleAgent、DeepSeek Harness 四个桌面应用。Codex CLI 不再作为桌面应用通告。
+
+连接设置显示从 Android 包信息读取的 APP 版本与构建号。开启“记住登录密码并自动连接”后，成功登录的凭据保存在 Android Keystore 支持的 AES-GCM 加密存储中；下次启动自动连接，手动重连留空密码时仅对相同主机、端口、用户名复用保存密码。关闭开关清除保存凭据。密码不写入普通聊天状态或源码；本次无法直接修改手机上的开关，需用户首次在手机输入并开启保存。
 
 0.5.19 修复 Windows 文件上传、下载和下载列表的 SFTP 盘符路径：使用 `/C:/...`，避免 JSch 把 `C:/...` 拼接在远程用户目录后造成 `No such file`。持久任务服务优先查找进程、用户和系统的 JAVA_HOME，再查 PATH；显式 Java 路径不存在时给出具体提示。
 
@@ -29,7 +33,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\dev\agent-control\win
 
 本机当前 WLAN 地址为 `192.168.43.5/24`。上面的网段仅用于手机也位于该可信局域网的情况；使用 VPN 或更换网络时改为实际可信来源地址。安装脚本会显示 SSH 主机指纹，请在手机连接时核对。不要在聊天中发送登录密码或私钥。
 
-本机桥接已在普通权限的用户会话中启动，状态 `ready=true`、`busy=false`，已发现 WorkBuddy、豆包、TeleAgent。当前以隐藏窗口在后台运行，无需重复启动。重启或注销后，从**普通权限、已登录且已解锁的桌面**运行 `windows/Start-Bridge.cmd`，并保持桥接和桌面会话运行。不要在管理员会话启动桌面桥接，避免与普通权限应用不匹配。安装目录为 `%LOCALAPPDATA%\OrcaPocket\bin`。
+本机桥接已在普通权限的用户会话中启动，状态 `ready=true`、`busy=false`，已发现 WorkBuddy、豆包、TeleAgent、DeepSeek Harness。当前后台运行，无需重复启动。重启或注销后，从**普通权限、已登录且已解锁的桌面**运行 `windows/Start-Bridge.cmd`，并保持桥接和桌面会话运行。不要在管理员会话启动桌面桥接，避免与普通权限应用不匹配。安装目录为 `%ProgramData%\AgentControl\<当前用户 SID>\bin`。本次修改登录启动项的组合命令被自动审批拒绝，因此新共享目录的自动启动尚未配置。
 
 本机 SSH 主机指纹（安装生成，2026-10-12）：
 

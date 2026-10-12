@@ -1,6 +1,8 @@
 ﻿$ErrorActionPreference = 'Stop'
 $root = Join-Path $env:LOCALAPPDATA 'OrcaPocket\bridge'
 $utf8 = [Text.UTF8Encoding]::new($false)
+$sharedRoot = Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+'\bridge')
+if (Test-Path -LiteralPath "$sharedRoot\status.json") { $root=$sharedRoot }
 function Read-Broker {
     if (!(Test-Path -LiteralPath "$root\status.json")) { throw 'Windows 桌面桥接未运行。请在已登录的 Windows 桌面启动 Agent Control Bridge，然后在手机重新连接。' }
     $s = [IO.File]::ReadAllText("$root\status.json",$utf8) | ConvertFrom-Json

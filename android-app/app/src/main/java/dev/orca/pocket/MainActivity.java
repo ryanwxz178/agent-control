@@ -63,8 +63,11 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
                 applySystemTheme();
                 io.execute(()->{try{
                     String data=store.get("state");event("restore",data.isEmpty()?new JSONObject():new JSONObject(data));
+                    android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);
+                    event("appInfo",new JSONObject().put("versionName",info.versionName).put("versionCode",info.versionCode));
                     String key=store.get("private-key");if(!key.isEmpty()){privateKey=android.util.Base64.decode(key,android.util.Base64.NO_WRAP);event("key",new JSONObject().put("loaded",true));}
                 String automatic=store.get("auto-connect");
+                    event("credentials",new JSONObject().put("saved",!automatic.isEmpty()));
                     if(!autoStarted&&!automatic.isEmpty()){autoStarted=true;JSONObject saved=new JSONObject(automatic);pendingConnection=saved;engine.connect(saved,privateKey);}
                 }catch(Exception e){error("本地记录无法解密："+e.getMessage());}});
             }
@@ -103,7 +106,7 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
         if(type.equals("connected")){
             JSONObject pending=pendingConnection,confirmed=data.optJSONObject("profile");pendingConnection=null;
             if(pending!=null&&confirmed!=null&&pending.optString("host").trim().equals(confirmed.optString("host").trim())&&pending.optString("user").trim().equals(confirmed.optString("user").trim())&&pending.optInt("port",22)==confirmed.optInt("port",22)){
-                io.execute(()->{try{store.put("auto-connect",pending.optBoolean("autoConnect")?pending.toString():"");}catch(Exception e){error("自动连接凭据保存失败");}});
+                io.execute(()->{try{boolean save=pending.optBoolean("autoConnect");store.put("auto-connect",save?pending.toString():"");event("credentials",new JSONObject().put("saved",save));}catch(Exception e){error("自动连接凭据保存失败");}});
             }
         }
 
@@ -135,8 +138,8 @@ public final class MainActivity extends Activity implements PocketEngine.Host {
             }catch(Exception ignored){}
         }
         @JavascriptInterface public void taskRequest(String raw){engine.taskRequest(raw);}
-        @JavascriptInterface public void forgetAutoConnect(){pendingConnection=null;io.execute(()->{try{store.put("auto-connect","");}catch(Exception e){error("清除自动连接凭据失败");}});}
-        @JavascriptInterface public void connect(String raw){try{JSONObject p=new JSONObject(raw);pendingConnection=p;if(!p.optBoolean("autoConnect"))forgetAutoConnect();engine.connect(p,privateKey);}catch(Exception e){error(e.getMessage());}}
+        @JavascriptInterface public void forgetAutoConnect(){pendingConnection=null;io.execute(()->{try{store.put("auto-connect","");event("credentials",new JSONObject().put("saved",false));}catch(Exception e){error("清除自动连接凭据失败");}});}
+        @JavascriptInterface public void connect(String raw){io.execute(()->{try{JSONObject p=new JSONObject(raw);String saved=store.get("auto-connect");if(p.optBoolean("autoConnect")&&p.optString("password").isEmpty()&&!saved.isEmpty()){JSONObject previous=new JSONObject(saved);if(p.optString("host").trim().equals(previous.optString("host").trim())&&p.optString("user").trim().equals(previous.optString("user").trim())&&p.optInt("port",22)==previous.optInt("port",22))p.put("password",previous.optString("password"));}pendingConnection=p;if(!p.optBoolean("autoConnect"))store.put("auto-connect","");engine.connect(p,privateKey);}catch(Exception e){error(e.getMessage());}});}
         @JavascriptInterface public void send(String raw){try{engine.send(new JSONObject(raw));}catch(Exception e){error(e.getMessage());}}
         @JavascriptInterface public void copyText(String text){
             if(text==null||text.length()>150000)return;

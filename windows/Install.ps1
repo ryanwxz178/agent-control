@@ -1,7 +1,7 @@
 ﻿param([switch]$StartAtLogon,[switch]$NoStart)
 $ErrorActionPreference='Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Windows only' }
-$root=Join-Path $env:LOCALAPPDATA 'OrcaPocket'
+$root=Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
 $bridge=Join-Path $root 'bridge'
 $bin=Join-Path $root 'bin'
 New-Item -ItemType Directory -Path $root,$bridge,$bin -Force | Out-Null

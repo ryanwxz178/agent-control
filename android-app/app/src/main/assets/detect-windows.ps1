@@ -13,6 +13,8 @@ foreach ($spec in @(@('codex','codex',@('codex')), @('claude','claude',@('claude
 }
 # Only a live interactive broker can advertise desktop apps. CLI use needs no broker.
 $statusFile = Join-Path $env:LOCALAPPDATA 'OrcaPocket\bridge\status.json'
+$sharedStatus = Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+'\bridge\status.json')
+if (Test-Path -LiteralPath $sharedStatus) { $statusFile=$sharedStatus }
 if (Test-Path -LiteralPath $statusFile) {
     try {
         $status = Get-Content -LiteralPath $statusFile -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -20,7 +22,9 @@ if (Test-Path -LiteralPath $statusFile) {
             ([DateTime]::UtcNow - [DateTime]::Parse($status.updatedUtc).ToUniversalTime()).TotalSeconds -lt 15) {
             foreach ($app in $status.apps) {
                 if ($app.id -in @('workbuddy','teleagent','doubao','deepseek','claude','codex') -and $app.path -and (Test-Path -LiteralPath $app.path -PathType Leaf)) {
-                    [Console]::WriteLine(('ORCA_APP|{0}|{0}' -f $app.id))
+                    if ($app.id -eq 'codex' -and [IO.Path]::GetFileName($app.path) -eq 'codex.exe') {
+                        [Console]::WriteLine(('ORCA_AGENT|codex|codex|{0}' -f $app.path))
+                    } else { [Console]::WriteLine(('ORCA_APP|{0}|{0}' -f $app.id)) }
                 }
             }
         }
