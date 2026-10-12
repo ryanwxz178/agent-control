@@ -62,12 +62,6 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button:n
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}button:not(:disabled):active{transform:none}}
 .browser-tool-card{margin:16px 0;padding:16px;border-radius:20px;background:var(--accent-soft)}.browser-tool-card small{font-size:11px;color:var(--secondary)}.browser-tool-card h3{font-size:15px;line-height:1.5;margin:8px 0}.browser-tool-card p{font-size:11px;color:var(--secondary);overflow-wrap:anywhere;margin:8px 0}.browser-tool-card img{display:block;width:100%;height:auto;max-height:250px;object-fit:cover;object-position:top;border-radius:10px;margin:14px 0}.browser-tool-card button{min-height:44px;width:100%}
 
-/* Reserve room for a small copy icon to the left of each user bubble. */
-.message.user{position:relative;max-width:calc(100% - 52px)}
-.user-copy-button{position:absolute;left:-48px;top:50%;transform:translateY(-50%);width:44px;height:44px;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;padding:12px;border:0;border-radius:12px;background:transparent;color:var(--secondary)}
-.user-copy-button .icon{width:17px;height:17px}
-.user-copy-button:not(:disabled):active{transform:translateY(-50%) scale(.98);background:var(--muted)}
-
 .interaction-text-input{display:block;width:100%;min-height:88px;margin:8px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;resize:vertical;line-height:1.6}.interaction-text-save{width:100%;margin:0 0 12px}
 
 /* Keep TeleAgent's current answer action above the keyboard, outside chat scrolling. */
@@ -79,3 +73,64 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button:n
 #app.answering .teleagent-answer:not(.closed) .teleagent-progress{display:none}.teleagent-answer .interaction-actions button.selected{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);box-shadow:inset 3px 0 var(--accent)}.teleagent-supplement{margin:12px 0}.teleagent-supplement summary{min-height:44px;padding:10px 0;font-size:14px;color:var(--secondary);cursor:pointer}.teleagent-answer.closed label,.teleagent-answer.closed .teleagent-supplement,.teleagent-answer.closed .interaction-text-save{display:none}
 
 #app.answering .jump-wrap{display:none}
+
+/* Compact mobile rhythm: 16px page inset, 12px panel inset, 8px control gap. */
+:root{--page-inset:16px;--panel-inset:12px;--control-gap:8px;--on-accent:#fff}
+:root[data-theme=dark]{--on-accent:#102331}
+header{height:56px;padding:4px var(--page-inset)}
+.brand{font-size:16px;letter-spacing:-.4px;gap:8px}
+.brand .orca{font-size:32px}.pocket{font-size:10px;letter-spacing:.8px}
+.connection{padding:8px 12px;gap:8px;font-size:12px;max-width:55%}
+.toolbar{padding:4px var(--page-inset) 8px;gap:var(--control-gap)}
+.agent-pill{gap:8px;min-height:44px}.agent-avatar{width:32px;height:32px;border-radius:10px;font-size:15px}
+.agent-heading{gap:2px}#agentLabel{font-size:14px}.agent-heading small{font-size:11px}
+.icon-button,.close{padding:10px}.icon-button .icon{width:20px;height:20px}
+main{padding-inline:var(--page-inset);scroll-padding-block:12px}
+#welcome{padding-top:20px}.suggestions{gap:8px}.suggestions button{border-radius:14px}
+.message{margin:12px 0 16px}
+.message.user{padding:0;background:transparent;border-radius:0;width:fit-content;max-width:100%;margin:12px 0 16px auto}
+.user-message-body{display:flex;align-items:center;justify-content:flex-end;gap:4px;max-width:100%}
+.message.user .content{min-width:0;max-width:calc(100% - 48px);padding:10px 14px;border-radius:16px 16px 4px 16px;background:var(--muted);font-size:15px;line-height:1.6}
+.user-copy-button{position:static;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;padding:12px;border:0;border-radius:10px;background:transparent;color:var(--secondary)}
+.user-copy-button .icon{width:17px;height:17px}
+.message.assistant{padding:0;margin:16px 0 20px}
+.message .meta{margin-bottom:6px;font-size:12px;gap:8px}.agent-badge{width:24px;height:24px;border-radius:8px}
+.message .content{font-size:15px;line-height:1.65}
+.message-time{font-size:11px;line-height:1.5;margin-top:4px}.message .time-date{display:none}
+.message-footer{gap:8px;margin-top:2px;min-height:44px;flex-wrap:wrap}
+.message-footer .message-time{margin:0;white-space:nowrap}.message-footer .status{font-size:11px}
+.copy-button{margin-left:auto;width:44px;min-height:44px;padding:12px}.task-origin{min-height:44px;padding:8px 4px}
+.markdown p{margin-bottom:8px}.markdown h1,.markdown h2,.markdown h3{margin-top:16px}
+.code-copy{min-height:44px;top:0}.markdown pre{padding-top:48px}
+#queuePanel button{min-width:44px;min-height:44px}
+footer{padding:8px var(--page-inset) max(8px,env(safe-area-inset-bottom))}
+.composer{padding:8px var(--panel-inset);border-radius:18px;box-shadow:none}
+#input{padding:2px 0;min-height:32px;max-height:120px;font-size:15px;line-height:1.6}
+.composer-bottom{margin-top:2px;padding:0;gap:8px}
+.composer-agent{min-height:44px;padding:8px 0;background:transparent;border-radius:8px}
+#modeLabel{padding:0;font-size:11px}#footerHint{margin-top:4px;font-size:10px}
+#send,.primary{background:var(--accent);color:var(--on-accent)}
+#send .icon{filter:invert(1)}:root[data-theme=dark] #send .icon{filter:none}
+dialog{border-radius:20px 20px 0 0;max-height:92dvh}
+.sheet-head{padding:12px var(--page-inset);gap:12px;align-items:center}
+h2{font-size:19px;letter-spacing:-.4px}.sheet-subtitle{font-size:12px;margin-top:4px}
+.sheet-body{padding:12px var(--page-inset) 16px;scroll-padding-top:12px}
+.sheet-actions{padding:8px var(--page-inset) max(12px,env(safe-area-inset-bottom))}
+.primary{min-height:48px;border-radius:12px;padding:12px 16px}
+.sheet-body label{margin-top:12px}.sheet-body .hint{line-height:1.6;margin-block:8px}
+.toggle-row{padding:12px 0;gap:12px}.toggle-row small{margin-top:4px;line-height:1.6}
+#agentList{margin-top:0;display:grid;gap:4px}
+.agent-option{min-height:60px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;margin:0;gap:10px;background:var(--surface)}
+.agent-option strong{font-size:14px;line-height:1.4}.agent-option small{margin-top:3px;line-height:1.5;font-size:11px}
+.agent-option.selected{border-color:var(--accent);background:var(--accent-soft)}
+.selection-note{font-size:11px;padding:10px 0;margin-top:2px}
+#agents .agent-access{display:flex;align-items:center;gap:12px;margin:0;font-size:12px;white-space:nowrap}
+#agents .agent-access select{flex:1;min-width:0;width:auto;margin:0;min-height:44px;padding:10px 12px}
+#agents .agent-help{margin:4px 0 8px}#agents .agent-help summary{font-size:12px}
+#agents .sheet-actions .primary{margin:0}
+.task-tabs{margin:0 0 12px;gap:8px}.task-tabs button,.task-controls button,.browser-actions button{min-height:44px}
+.conversation-row{padding:12px 0;min-height:64px}.task-card{padding:12px 0}
+.interaction,.browser-tool-card{padding:12px;border-radius:12px;margin-block:12px}
+.attachment-list{margin-block:12px}.attachment-button{padding:12px;border-radius:12px}
+@media(min-width:600px){:root{--page-inset:24px}dialog{border-radius:20px}}
+@media(max-height:620px){header{height:48px}.toolbar{padding-block:0 4px}#welcome{padding-top:12px}.sheet-head{padding-block:8px}.sheet-body{padding-block:8px 12px}}

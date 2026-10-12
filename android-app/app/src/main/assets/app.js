@@ -29,7 +29,8 @@ function formatTime(value){
 }
 function messageTime(m){
  const time=document.createElement('time');time.className='message-time';const value=recordedTime(m);
- time.textContent=formatTime(value);if(value!==null)time.dateTime=new Date(value).toISOString();return time;
+ const full=formatTime(value);time.title=full;time.setAttribute('aria-label',full);
+ if(value!==null){const date=document.createElement('span');date.className='time-date';date.textContent=full.slice(0,11);time.append(date,document.createTextNode(full.slice(11)));time.dateTime=new Date(value).toISOString();}else time.textContent=full;return time;
 }
 function updateMessage(node,m){
  const failed=String(m.status||'').startsWith('失败');node.classList.toggle('failed',failed);
@@ -44,10 +45,9 @@ function renderMessage(m){
   if(m.role==='notice'){node.className='notice'+(m.error?' error':'');node.textContent=m.text;node.append(messageTime(m));return node;}
   const meta=document.createElement('div');meta.className='meta';
   if(m.role!=='user'){const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=(m.agent||'O').slice(0,1);meta.append(badge);const name=document.createElement('span');name.textContent=m.agent+' · '+(m.label||'回复');meta.append(name);node.append(meta);}
-  const content=document.createElement('div');content.className='content';content.textContent=m.text||'';node.append(content);
-  node.append(messageTime(m));
-  if(m.role!=='user'){const foot=document.createElement('div');foot.className='message-footer';const status=document.createElement('div');status.className='status';const copy=document.createElement('button');copy.className='copy-button';copy.setAttribute('aria-label','复制回复');copy.append(icon('copy'));copy.onclick=()=>copyReply(m.text);foot.append(status,copy);node.append(foot);updateMessage(node,m);}
-  if(m.role==='user'){const copy=document.createElement('button');copy.type='button';copy.className='user-copy-button';copy.setAttribute('aria-label','复制指令');copy.title='复制指令';copy.append(icon('copy'));copy.onclick=()=>copyReply(m.text,'指令');node.prepend(copy);}
+  const content=document.createElement('div');content.className='content';content.textContent=m.text||'';
+  if(m.role!=='user'){node.append(content);const foot=document.createElement('div');foot.className='message-footer';const status=document.createElement('div');status.className='status';const copy=document.createElement('button');copy.className='copy-button';copy.setAttribute('aria-label','复制回复');copy.append(icon('copy'));copy.onclick=()=>copyReply(m.text);foot.append(messageTime(m),status,copy);node.append(foot);updateMessage(node,m);}
+  if(m.role==='user'){const body=document.createElement('div');body.className='user-message-body';const copy=document.createElement('button');copy.type='button';copy.className='user-copy-button';copy.setAttribute('aria-label','复制指令');copy.title='复制指令';copy.append(icon('copy'));copy.onclick=()=>copyReply(m.text,'指令');body.append(copy,content);node.append(body,messageTime(m));}
   renderExtras(node,m);return node;
 }
 const automaticPreviews=new Set();const attachmentCache=new Map();const attachmentPreviews=new Map();let desktopView=null,desktopRun='';
@@ -209,7 +209,7 @@ function send(){
   add({id:messageId,role:'user',text});$('input').value='';$('input').style.height='auto';setBusy(true);call('send',JSON.stringify(request));
 }
 $('settingsButton').onclick=openSettings;$('connectionButton').onclick=openSettings;
-$('agentButton').onclick=()=>{agentList();$('agents').showModal();};
+$('agentButton').onclick=()=>{agentList();$('agents').querySelector('.agent-help').open=false;$('agents').showModal();$('agents').querySelector('.sheet-body').scrollTop=0;};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
 $('connect').onclick=()=>{if(busy)return;const p=captureSettings();if(!p.host||!p.user){$('connectError').hidden=false;$('connectError').textContent='请填写电脑地址和用户名';const field=!p.host?$('host'):$('user');field.setAttribute('aria-invalid','true');field.focus();return;}if(!Number.isInteger(p.port)||p.port<1||p.port>65535){$('connectError').hidden=false;$('connectError').textContent='端口需要在 1 到 65535 之间';$('port').focus();return;}setBusy(true);$('connectError').hidden=true;call('connect',JSON.stringify({...p,password:$('password').value}));};
 for(const k of ['write','hostPermissions','directory'])$(k).onchange=()=>{state.profile[k]=$(k).type==='checkbox'?$(k).checked:$(k).value.trim();persist();};
