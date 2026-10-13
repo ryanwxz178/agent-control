@@ -64,16 +64,18 @@ foreach ($spec in @(@('codex','codex',@('codex')), @('claude','claude',@('claude
 }
 # Only a live interactive broker can advertise desktop apps. CLI use needs no broker.
 $statusFile = Join-Path $env:LOCALAPPDATA 'OrcaPocket\bridge\status.json'
-$sharedStatus = Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+'\bridge\status.json')
-if (Test-Path -LiteralPath $sharedStatus) { $statusFile=$sharedStatus }
-if (Test-Path -LiteralPath $statusFile) {
+$sharedRoot = Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+'\bridge')
+# The directory is stable; replacing a heartbeat must not select a different broker.
+if ([IO.Directory]::Exists($sharedRoot)) { $statusFile=Join-Path $sharedRoot 'status.json' }
     try {
         for($statusAttempt=0;$statusAttempt -lt 8;$statusAttempt++) {
             $statusStream=$null;$statusReader=$null
             try {
                 $statusStream=[IO.File]::Open($statusFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
                 $statusReader=[IO.StreamReader]::new($statusStream,[Text.Encoding]::UTF8)
-                $status=$statusReader.ReadToEnd() | ConvertFrom-Json;break
+                $status=$statusReader.ReadToEnd() | ConvertFrom-Json
+                if($null -eq $status){throw '桌面状态尚未写入完整'}
+                break
             } catch { if($statusAttempt -eq 7){throw};Start-Sleep -Milliseconds 75 }
             finally { if($statusReader){$statusReader.Dispose()}elseif($statusStream){$statusStream.Dispose()} }
         }
@@ -103,7 +105,6 @@ if (Test-Path -LiteralPath $statusFile) {
         }
     } catch { # Missing/stale broker never masquerades as a desktop agent.
     }
-}
 if(!$cliFound['teleagent']) {
     foreach($installedPath in @(Get-TeleAgentInstalledPaths | Select-Object -Unique)) {
         try { Write-TeleAgentCli $installedPath } catch { # Ignore malformed metadata from a stale install record.

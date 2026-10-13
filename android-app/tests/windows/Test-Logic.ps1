@@ -366,9 +366,9 @@ try {
     $first=[IO.File]::ReadAllText("$Root/status.json")
     $script:activeId='running';Save-Status
     $updated=[IO.File]::ReadAllText("$Root/status.json")|ConvertFrom-Json
-    Assert $updated.busy 'second heartbeat replaces existing status on host runtime'
+    Assert $updated.busy 'second heartbeat updates the existing status on host runtime'
     Assert $updated.fileUploads 'new bridge advertises attachment capability so old brokers cannot silently drop files'
-    Assert ([IO.File]::ReadAllText("$Root/status.previous") -eq $first) 'previous heartbeat retained during atomic replacement'
+    Assert (![IO.File]::Exists("$Root/status.tmp") -and ![IO.File]::Exists("$Root/status.previous")) 'heartbeat keeps the published path in place without rename or replacement files'
 } finally { [IO.Directory]::Delete($Root,$true) }
 # Diagnostic persistence must preserve request context without masking the error.
 $diagnosticWriter=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Save-RequestDiagnostic'},$true)

@@ -4,6 +4,28 @@
     if ($age -lt -5 -or $age -gt 15) { throw '请求已过期，不执行旧任务' }
     if ($Request.prompt -isnot [string] -or [string]::IsNullOrWhiteSpace($Request.prompt) -or $Request.prompt.Length -gt 85000) { throw '任务内容为空或超过限制' }
 }
+function Write-BrokerStatus([string]$Path,[string]$Json) {
+    if([string]::IsNullOrWhiteSpace($Json)){throw '桥接状态不能为空'}
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes($Json)
+    for($attempt=0;$attempt -lt 5;$attempt++) {
+        $stream=$null
+        try {
+            # Keep the published filename in place. File.Replace briefly removes
+            # it on Windows, before older phone clients enter their read retry.
+            $stream=[IO.File]::Open($Path,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::Write,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            $stream.Position=0
+            # Write before truncating: an old reader must never observe an empty
+            # existing status as a successful ConvertFrom-Json null result.
+            $stream.Write($bytes,0,$bytes.Length)
+            $stream.SetLength($bytes.Length)
+            $stream.Flush($true)
+            return
+        } catch [IO.IOException] {
+            if($attempt -eq 4){throw}
+        } finally {if($stream){$stream.Dispose()}}
+        Start-Sleep -Milliseconds 50
+    }
+}
 function Resolve-DesktopFiles($Files,$Adapter) {
     if ($null -eq $Files) { return @() }
     if ($Files -isnot [Array]) { throw '附件列表格式无效，未操作电脑' }

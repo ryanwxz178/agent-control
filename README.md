@@ -2,7 +2,7 @@
 
 Android 聊天客户端，通过 SSH 连接电脑上的 AI Agent，支持确认交互、附件、桌面会话连续性及可选电脑持久任务服务。
 
-当前源码版本：**0.5.29**（Android versionCode 55）。最低 Android 8.0 / API 26，目标 API 35。
+当前源码版本：**0.5.30**（Android versionCode 56）。最低 Android 8.0 / API 26，目标 API 35。
 
 ## 项目结构
 
@@ -23,7 +23,7 @@ bash android-app/fetch-dependencies.sh
 bash android-app/build.sh
 ```
 
-产物：`dist/Agent-Control-0.5.29.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
+产物：`dist/Agent-Control-0.5.30.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
 
 Windows 本机构建（PowerShell 7）：
 
@@ -51,6 +51,8 @@ UI 测试需要 Playwright 和 Chrome；实机、SSH、Windows 桌面测试需�
 ## 可选组件
 
 ### 回复格式
+
+0.5.30 修复 Windows 心跳状态更新期间误报「桌面桥接未运行」：桥接保持状态文件路径稳定，客户端将短暂缺失、I/O 占用、空内容和解析失败纳入有界重试。共享队列依据稳定目录选择，更新窗口不会切换到旧队列；检测与结束会话同样处理。仅安装并重启新版 Windows Bridge 也能兼容 0.5.29 的读取逻辑；新版 APK 同时包含客户端重试修复。失败任务仍不会自动重发。独立检查：`Test-BrokerStatus.ps1`、`Test-BrokerRead.ps1`；只读实机诊断：`powershell.exe -NoProfile -File android-app/app/src/main/assets/desktop-windows-client.ps1 -ProbeOnly`。
 
 0.5.29 的手机回复支持标题、粗体、斜体、删除线、标记高亮、嵌套有序/无序列表、任务列表、引用、链接、横向滚动表格、行内代码及带语言标签和复制按钮的代码块。常用语言代码高亮随 APK 离线提供；未知语言及大代码块保留完整原文。复制整条回复保留 Markdown 源文本。
 

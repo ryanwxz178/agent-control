@@ -1,7 +1,20 @@
 $ErrorActionPreference='Stop'
 $conversation='__CONVERSATION__'
 $root=Join-Path $env:ProgramData ('AgentControl/'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+'/bridge')
-if(!(Test-Path -LiteralPath $root)){$root=Join-Path $env:LOCALAPPDATA 'OrcaPocket/bridge'}
+if(![IO.Directory]::Exists($root)){$root=Join-Path $env:LOCALAPPDATA 'OrcaPocket/bridge'}
+function Read-EndBrokerStatus {
+    for($attempt=0;$attempt -lt 8;$attempt++) {
+        $statusStream=$null;$statusReader=$null
+        try {
+            $statusStream=[IO.File]::Open((Join-Path $root 'status.json'),[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            $statusReader=[IO.StreamReader]::new($statusStream,[Text.Encoding]::UTF8)
+            $status=$statusReader.ReadToEnd()|ConvertFrom-Json
+            if($null -eq $status){throw '桌面状态尚未写入完整'}
+            return $status
+        } catch {if($attempt -eq 7){throw};Start-Sleep -Milliseconds 75}
+        finally {if($statusReader){$statusReader.Dispose()}elseif($statusStream){$statusStream.Dispose()}}
+    }
+}
 $pending=$false
 foreach($file in @(Get-ChildItem -LiteralPath $root -Filter '*.working' -ErrorAction SilentlyContinue)) {
     $request=[IO.File]::ReadAllText($file.FullName,[Text.Encoding]::UTF8) | ConvertFrom-Json
@@ -30,10 +43,8 @@ if($pending){[Console]::WriteLine('DESKTOP_END_PENDING')}else{
                 if(!(Test-Path -LiteralPath (Join-Path $root ($ending.id+'.request'))) -and !(Test-Path -LiteralPath (Join-Path $root ($ending.id+'.working')))){throw '原桌面会话未确认结束，请在电脑查看后重试'}
                 [IO.File]::SetLastWriteTimeUtc((Join-Path $root ($ending.id+'.lease')),[DateTime]::UtcNow)
             }else{
-                $statusStream=[IO.File]::Open((Join-Path $root 'status.json'),[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
-                $statusReader=[IO.StreamReader]::new($statusStream,[Text.Encoding]::UTF8)
-                try{$status=$statusReader.ReadToEnd()|ConvertFrom-Json}finally{$statusReader.Dispose()}
-                if(!$status.ready -or $status.busy -or $status.userSid -cne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or ([DateTime]::UtcNow-[DateTime]::Parse($status.updatedUtc).ToUniversalTime()).TotalSeconds -gt 15){throw '桌面桥接不可用，不能确认原会话结束'}
+                $status=Read-EndBrokerStatus
+                if($status.protocol -ne 1 -or !$status.ready -or $status.busy -or $status.userSid -cne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or ([DateTime]::UtcNow-[DateTime]::Parse($status.updatedUtc).ToUniversalTime()).TotalSeconds -gt 15){throw '桌面桥接不可用，不能确认原会话结束'}
                 $id=[Guid]::NewGuid().ToString('N')
                 $body=@{protocol=1;id=$id;app=$state.app;prompt=$state.prompt;conversationId=$conversation;operation='endConversation';brokerId=$status.brokerId;createdUtc=[DateTime]::UtcNow.ToString('o')}
                 [IO.File]::WriteAllText($marker,(@{id=$id}|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))

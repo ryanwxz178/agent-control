@@ -38,15 +38,7 @@ function Save-Status {
     }
     $reason=Get-DesktopHealth
     $status=@{protocol=1;fileUploads=$true;brokerId=$brokerId;userSid=$sid;sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;updatedUtc=[DateTime]::UtcNow.ToString('o');ready=(!$reason);reason=$reason;busy=[bool]$script:activeId;apps=@($script:apps)}
-    [IO.File]::WriteAllText("$Root\status.tmp",($status|ConvertTo-Json -Depth 5 -Compress),$utf8)
-    for ($attempt=0; $attempt -lt 5; $attempt++) {
-        try {
-            # Windows PowerShell 5.1 binds a null string argument as an empty path.
-            if (Test-Path -LiteralPath "$Root\status.json") { [IO.File]::Replace("$Root\status.tmp","$Root\status.json","$Root\status.previous") }
-            else { [IO.File]::Move("$Root\status.tmp","$Root\status.json") }
-            break
-        } catch [IO.IOException] { if ($attempt -eq 4) { throw }; Start-Sleep -Milliseconds 50 }
-    }
+    Write-BrokerStatus "$Root\status.json" ($status|ConvertTo-Json -Depth 5 -Compress)
 }
 function Pulse([switch]$Ending) {
     Save-Status

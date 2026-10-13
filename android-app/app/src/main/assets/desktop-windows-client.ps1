@@ -1,10 +1,16 @@
-﻿$ErrorActionPreference = 'Stop'
-$root = Join-Path $env:LOCALAPPDATA 'OrcaPocket\bridge'
+﻿param([switch]$ProbeOnly)
+$ErrorActionPreference = 'Stop'
 $utf8 = [Text.UTF8Encoding]::new($false)
+function Resolve-BrokerRoot([string]$SharedRoot,[string]$LegacyRoot) {
+    # Heartbeat replacement can briefly hide status.json. The installed queue
+    # directory stays present; never switch an installed broker to the old queue.
+    if ([IO.Directory]::Exists($SharedRoot)) { return $SharedRoot }
+    return $LegacyRoot
+}
+$legacyRoot = Join-Path $env:LOCALAPPDATA 'OrcaPocket\bridge'
 $sharedRoot = Join-Path $env:ProgramData ('AgentControl\'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value+'\bridge')
-if (Test-Path -LiteralPath "$sharedRoot\status.json") { $root=$sharedRoot }
+$root = Resolve-BrokerRoot $sharedRoot $legacyRoot
 function Read-Broker {
-    if (!(Test-Path -LiteralPath "$root\status.json")) { throw 'Windows 桌面桥接未运行。请在已登录的 Windows 桌面启动 Agent Control Bridge，然后在手机重新连接。' }
     $s=$null
     for($attempt=0;$attempt -lt 8;$attempt++) {
         $statusStream=$null;$statusReader=$null
@@ -12,9 +18,17 @@ function Read-Broker {
             $statusStream=[IO.File]::Open("$root\status.json",[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
             $statusReader=[IO.StreamReader]::new($statusStream,$utf8)
             $s=$statusReader.ReadToEnd() | ConvertFrom-Json
+            if($null -eq $s){throw [IO.InvalidDataException]::new('桌面桥接状态为空')}
             break
         } catch {
-            if($attempt -eq 7){throw}
+            if($attempt -eq 7){
+                $failure=$_.Exception
+                while($failure.InnerException){$failure=$failure.InnerException}
+                if($failure -is [IO.FileNotFoundException] -or $failure -is [IO.DirectoryNotFoundException]) {
+                    throw ('Windows 桌面桥接未运行。请在已登录的 Windows 桌面启动 Agent Control Bridge，然后在手机重新连接。状态路径：'+$root+'\status.json')
+                }
+                throw ('Windows 桌面桥接状态暂时无法读取，请稍后重试。状态路径：'+$root+'\status.json；'+$failure.Message)
+            }
             Start-Sleep -Milliseconds 75
         } finally {
             if($statusReader){$statusReader.Dispose()}elseif($statusStream){$statusStream.Dispose()}
@@ -24,6 +38,19 @@ function Read-Broker {
         ([DateTime]::UtcNow - [DateTime]::Parse($s.updatedUtc).ToUniversalTime()).TotalSeconds -gt 15) { throw '桌面桥接已离线或不属于当前 SSH 用户。' }
     if (!$s.ready) { throw ('Windows 桌面不可用：' + $s.reason + '。请登录并解锁对应桌面；云电脑需要保持可交互的用户会话。') }
     return $s
+}
+if($ProbeOnly) {
+    # Read-only diagnostics stop before creating a lease, decoding a request,
+    # or writing anything to the desktop queue. All broker checks still apply.
+    [Console]::OutputEncoding=$utf8
+    try {
+        $probe=Read-Broker
+        [Console]::WriteLine((@{type='desktop.broker';root=$root;userSid=$probe.userSid;brokerId=$probe.brokerId}|ConvertTo-Json -Compress))
+    } catch {
+        [Console]::WriteLine((@{type='error';message=$_.Exception.Message}|ConvertTo-Json -Compress))
+        exit 1
+    }
+    return
 }
 $id = [Guid]::NewGuid().ToString('N')
 $lease = "$root\$id.lease"
