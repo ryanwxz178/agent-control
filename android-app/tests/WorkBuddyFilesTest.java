@@ -63,6 +63,14 @@ public final class WorkBuddyFilesTest {
         try{acp.accept(response(3,new JSONObject().put("stopReason","refusal").put("_meta",new JSONObject().put("codebuddy.ai/errorMessage","x".repeat(2500)))).toString());throw new AssertionError();}catch(IOException error){check(error.getMessage().length()<2100,"upstream diagnostic is bounded without serializing arbitrary full metadata");}
     }
     static void previews()throws Exception{
+        for(JSONArray files:new JSONArray[]{null,new JSONArray()}){
+            ByteArrayOutputStream out=new ByteArrayOutputStream();
+            // Escaping and the envelope must count even when the request has no attachments.
+            AcpSession oversized=new AcpSession("budget","\\".repeat(AcpSession.MAX_CONTENT_BYTES/2),DIRECTORY,"pc","WorkBuddy",new EventDecoder((t,s)->{}),new Interactions((t,e)->{}),new Attachments((t,e)->{}),files,null);
+            oversized.start(out);oversized.accept(response(1,new JSONObject().put("protocolVersion",1)).toString());
+            try{oversized.accept(response(2,new JSONObject().put("sessionId","fixture")).toString());throw new AssertionError("Oversized prompt sent");}
+            catch(IOException expected){check(expected.getMessage().contains("传输大小限制")&&lastRequest(out).getString("method").equals("session/new"),"escaped text and complete envelope are checked before send, including missing attachments");}
+        }
         // Fixture tests budgets and byte ownership. Real image quality belongs to platform preview tests.
         byte[] original=new byte[763*1024];original[0]=(byte)137;original[1]=80;original[2]=78;original[3]=71;
         JSONArray selected=new JSONArray();for(int i=0;i<4;i++)selected.put(file("large"+i+".png","image/png",original));
@@ -72,7 +80,7 @@ public final class WorkBuddyFilesTest {
         acp.start(output);acp.accept(response(1,new JSONObject().put("protocolVersion",1).put("agentCapabilities",new JSONObject().put("promptCapabilities",new JSONObject().put("image",true)))).toString());acp.accept(response(2,new JSONObject().put("sessionId","fixture")).toString());
         JSONArray content=lastRequest(output).getJSONObject("params").getJSONArray("prompt");int sum=0;
         for(int i=1;i<content.length();i++){JSONObject part=content.getJSONObject(i);sum+=Base64.getDecoder().decode(part.getString("data")).length;check(part.getString("mimeType").equals("image/jpeg")&&part.getJSONObject("_meta").getString("path").endsWith(".png"),"preview has actual JPEG MIME while retaining original PNG reference");}
-        check(reads.get()==4&&limits.equals(List.of(65536,65536,65536,65536))&&sum==AcpSession.IMAGE_BUDGET,"current and historical images share one 256KiB ACP image budget");
+        check(reads.get()==4&&limits.equals(List.of(32768,32768,32768,32768))&&sum==AcpSession.IMAGE_BUDGET,"current and historical images share one 128KiB ACP image budget with model-request headroom");
         check(statuses.stream().filter(s->s.equals("CLI 使用图片预览，原图仍保留在电脑")).count()==1,"preview disclosure reaches user exactly once without claiming original image was sent");
         check(original.length==763*1024&&(original[0]&255)==137&&output.size()<AcpSession.MAX_CONTENT_BYTES,"large original remains intact while resulting ACP packet fits bounded transport budget");
         for(int invalid:List.of(0,1,2)){

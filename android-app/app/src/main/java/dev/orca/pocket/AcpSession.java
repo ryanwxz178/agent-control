@@ -18,7 +18,9 @@ final class AcpSession implements SshTransport.Duplex {
     private final EventDecoder decoder;private final Interactions interactions;private final Attachments attachments;
     interface FileReader { byte[] read(String path,int limit)throws Exception; }
     interface ImagePreview { byte[] preview(byte[] bytes,int maxBytes)throws Exception; }
-    static final int IMAGE_BUDGET=256*1024,MAX_CONTENT_BYTES=512*1024;
+    // WorkBuddy expands ACP content into its model request (including provider metadata).
+    // Reserve room for that expansion, system instructions and tool schemas under WBIPC's 640KiB limit.
+    static final int IMAGE_BUDGET=128*1024,MAX_CONTENT_BYTES=256*1024;
     private final JSONArray inputFiles;private final FileReader fileReader;
     private final ImagePreview imagePreview;
     private JSONObject promptCapabilities=new JSONObject();
@@ -27,7 +29,12 @@ final class AcpSession implements SshTransport.Duplex {
     AcpSession(String run,String prompt,String directory,String host,String name,EventDecoder decoder,Interactions interactions,Attachments attachments,JSONArray inputFiles,FileReader fileReader){this(run,prompt,directory,host,name,decoder,interactions,attachments,inputFiles,fileReader,null);}
     AcpSession(String run,String prompt,String directory,String host,String name,EventDecoder decoder,Interactions interactions,Attachments attachments,JSONArray inputFiles,FileReader fileReader,ImagePreview imagePreview){this.run=run;this.prompt=prompt;this.directory=directory;this.host=host;this.name=name;this.decoder=decoder;this.interactions=interactions;this.attachments=attachments;this.inputFiles=inputFiles;this.fileReader=fileReader;this.imagePreview=imagePreview;}
     synchronized void send(JSONObject json)throws Exception{input.write((json.toString()+"\n").getBytes(StandardCharsets.UTF_8));input.flush();}
-    void request(int id,String method,JSONObject params)throws Exception{send(new JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params));}
+    void request(int id,String method,JSONObject params)throws Exception{
+        JSONObject json=new JSONObject().put("jsonrpc","2.0").put("id",id).put("method",method).put("params",params);
+        if(name.equals("WorkBuddy")&&method.equals("session/prompt")&&json.toString().getBytes(StandardCharsets.UTF_8).length>MAX_CONTENT_BYTES)
+            throw new IOException("CLI 附件或对话内容超过托管传输大小限制，请减少附件或新建对话；未发送");
+        send(json);
+    }
     public void start(OutputStream out)throws Exception{input=out;request(1,"initialize",new JSONObject().put("protocolVersion",1).put("clientInfo",new JSONObject().put("name","orca-pocket").put("version","0.3.0")).put("clientCapabilities",new JSONObject()));}
     public boolean accept(String line)throws Exception{
         if(!line.startsWith("{"))return false;JSONObject j=new JSONObject(line);String method=j.optString("method");JSONObject p=j.optJSONObject("params");

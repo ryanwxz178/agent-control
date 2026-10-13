@@ -26,7 +26,8 @@ public final class WindowsDuplexBackpressureTest {
         byte[] image=new byte[bytes];Arrays.fill(image,(byte)11);
         JSONArray files=new JSONArray().put(new JSONObject().put("name","fixture.png").put("mime","image/png").put("size",image.length).put("path","D:/fixture/.agent-control-input/12345678-1234-1234-1234-123456789abc-fixture.png"));
         EventDecoder decoder=new EventDecoder((text,status)->{});
-        AcpSession protocol=new AcpSession("backpressure","synthetic fixture only","D:/fixture","fixture-pc","WorkBuddy",decoder,new Interactions((type,event)->{}),new Attachments((type,event)->{}),files,(path,limit)->image);
+        // Exercise large pipe writes independently of WorkBuddy's smaller hosted image budget.
+        AcpSession protocol=new AcpSession("backpressure","synthetic fixture only","D:/fixture","fixture-pc","DeepSeek Harness",decoder,new Interactions((type,event)->{}),new Attachments((type,event)->{}),files,(path,limit)->image);
         long start=System.nanoTime();
         try(LocalTransport transport=new LocalTransport()){
             transport.interactiveWindowsScript(Agent.windowsNodeScript(node,source,false),protocol,new AtomicBoolean(),timeout);

@@ -16,8 +16,18 @@ public final class WorkBuddyImageLiveTest {
         AtomicReference<String> reply=new AtomicReference<>(""),error=new AtomicReference<>(""),protocol=new AtomicReference<>("");
         AtomicBoolean desktopFallback=new AtomicBoolean();
         AtomicInteger previewBytes=new AtomicInteger();
+        Path sizes=root.resolve("android-app/test-output/workbuddy-request-sizes"+suffix+".jsonl");
+        Files.createDirectories(sizes.getParent());Files.deleteIfExists(sizes);
         PocketEngine engine=new PocketEngine(new PocketEngine.Host(){
-            public String asset(String name)throws Exception{return Files.readString(root.resolve("android-app/app/src/main/assets").resolve(name));}
+            public String asset(String name)throws Exception{
+                String source=Files.readString(root.resolve("android-app/app/src/main/assets").resolve(name));
+                if(name.equals("workbuddy-windows-cli.js")){
+                    // Test-only metadata: never save prompt, headers, image bytes or account credentials.
+                    String metrics="fs.appendFileSync("+JSONObject.quote(sizes.toString())+",JSON.stringify({bytes:body.length})+'\\n');";
+                    source=source.replace("const result=await rpc(channel+'/http.fetch'",metrics+"const result=await rpc(channel+'/http.fetch'");
+                }
+                return source;
+            }
             public boolean trust(String host,String fingerprint){return false;}
             public byte[] previewImage(byte[] bytes,int maxBytes)throws Exception{byte[] preview=TaskService.previewImage(bytes,maxBytes);previewBytes.set(preview.length);return preview;}
             public void event(String type,JSONObject data){
@@ -45,6 +55,10 @@ public final class WorkBuddyImageLiveTest {
             String text=reply.get();
             if(engine.busy.get()||desktopFallback.get()||!protocol.get().equals("acp")||!text.contains("红")||!text.contains("蓝")||!text.contains("圆")||!(text.contains("方")||text.contains("正方形")))throw new AssertionError("Unexpected image reply or transport: "+text);
             JSONObject evidence=new JSONObject().put("passed",true).put("accessMode","cli").put("transport","Production InputFiles -> PocketEngine -> LocalTransport -> WorkBuddy WBIPC -> ACP native image").put("desktopFallback",false).put("protocol",protocol.get()).put("fixtureBytes",Files.size(fixture)).put("previewBytes",previewBytes.get()).put("prompt",prompt).put("reply",text);
+            if(Files.exists(sizes)){
+                JSONArray requests=new JSONArray();for(String row:Files.readAllLines(sizes)){JSONObject metric=new JSONObject(row);if(metric.getInt("bytes")>655360)throw new AssertionError("Actual model request exceeded WBIPC limit");requests.put(metric);}
+                if(requests.length()==0)throw new AssertionError("No model request observed");evidence.put("actualModelRequests",requests);
+            }
             Files.createDirectories(root.resolve("android-app/test-output"));Files.writeString(root.resolve("android-app/test-output/workbuddy-image-cli-live"+suffix+".json"),evidence.toString(2));System.out.println(evidence.toString(2));
         }finally{engine.close();}
     }

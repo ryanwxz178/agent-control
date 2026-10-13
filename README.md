@@ -2,7 +2,7 @@
 
 Android 聊天客户端，通过 SSH 连接电脑上的 AI Agent，支持确认交互、附件、桌面会话连续性及可选电脑持久任务服务。
 
-当前源码版本：**0.5.27**（Android versionCode 53）。最低 Android 8.0 / API 26，目标 API 35。
+当前源码版本：**0.5.28**（Android versionCode 54）。最低 Android 8.0 / API 26，目标 API 35。
 
 ## 项目结构
 
@@ -23,7 +23,7 @@ bash android-app/fetch-dependencies.sh
 bash android-app/build.sh
 ```
 
-产物：`dist/Agent-Control-0.5.27.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
+产物：`dist/Agent-Control-0.5.28.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
 
 Windows 本机构建（PowerShell 7）：
 
@@ -85,3 +85,5 @@ node setup.mjs
 本仓库仅包含运行、构建、维护所需的代码、资源、测试、依赖锁文件与许可证。SDK/JDK、node_modules、下载 JAR、APK、生成文件、签名私钥、凭据、运行日志与测试输出均不提交。
 
 第三方组件见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 与各组件附带许可证。本项目是独立实现，与官方 Orca 无隶属关系；Android 包名沿用 `dev.orca.pocket`。
+
+0.5.28 为 WorkBuddy CLI 生成的完整模型请求预留预算：一轮图片预览合计最多 128KiB，完整 ACP 请求最多 256KiB（含 UTF-8、JSON 转义与协议封装），原图保留。Windows 转发器继续按真实 HTTP 请求的 640KiB 上限校验，普通和 gzip 超限均不会转发或自动重试。真实模型验收：1,193,880 字节合成红圆/蓝方块图片，预览 126,054 字节，完整模型请求 206,959 字节，正确回复；未使用或重发用户私有照片。

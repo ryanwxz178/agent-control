@@ -55,7 +55,7 @@ async function relay(req,res){
   // A fresh loopback key protects each CLI process; the desktop token stays in its broker.
   if(req.headers.authorization!=='Bearer '+secret){res.writeHead(401);res.end();return;}
   const url=new URL(req.url,'http://127.0.0.1');if(!['GET','HEAD','POST','PUT','PATCH','DELETE'].includes(req.method))throw Error('不支持的请求方法');
-  const pieces=[];let size=0;for await(const piece of req){size+=piece.length;if(size>MAX_BODY)throw Error('WorkBuddy CLI 请求超过托管接口 640KiB 限制');pieces.push(piece);}
+  const pieces=[];let size=0;for await(const piece of req){size+=piece.length;if(size>MAX_BODY)throw Error('WorkBuddy CLI 完整请求超过托管接口 640KiB 限制；尚未转发本次请求，请减少附件或新建对话');pieces.push(piece);}
   let body=Buffer.concat(pieces);if(req.headers['content-encoding']==='gzip')body=zlib.gunzipSync(body,{maxOutputLength:MAX_BODY});
   else if(req.headers['content-encoding']&&req.headers['content-encoding']!=='identity')throw Error('WorkBuddy CLI 压缩格式未适配');
   const result=await rpc(channel+'/http.fetch',{method:req.method,path:url.pathname,query:Object.fromEntries(url.searchParams),
