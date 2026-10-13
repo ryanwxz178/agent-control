@@ -22,6 +22,18 @@ public static class PocketDesktop {
   return found.ToArray();
  }
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string className,string title);
+ [StructLayout(LayoutKind.Sequential)] public struct ScreenPoint {public int x;public int y;}
+ [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(ScreenPoint point);
+ [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd,uint flag);
+ public static bool ClickTaskbar(IntPtr taskbar,IntPtr target,int x,int y) {
+  if(GetForegroundWindow()==target)return true;
+  var point=new ScreenPoint{x=x,y=y};
+  if(taskbar==IntPtr.Zero||FindWindow("Shell_TrayWnd",null)!=taskbar||GetAncestor(WindowFromPoint(point),2)!=taskbar)return false;
+  if(!SetCursorPos(x,y)||GetAncestor(WindowFromPoint(point),2)!=taskbar)return false;
+  if(GetForegroundWindow()==target)return true;
+  mouse_event(2,0,0,0,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero);return true;
+ }
  [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd,uint command);
  [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hwnd);
  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr hwnd,EnumProc callback,IntPtr param);
@@ -273,13 +285,50 @@ function Invoke-UiButton($Node,$Window,[switch]$Ending) {
     [PocketDesktop]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
     [PocketDesktop]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
 }
-function Set-AppWindowForeground($Window) {
+function Set-AppWindowForeground($Window,$Adapter=$null) {
     $handle=[IntPtr]$Window.Current.NativeWindowHandle
     if([PocketDesktop]::Activate($handle)){return $true}
     # Use the target application's accessibility provider when Windows declines
     # background SetForegroundWindow. No keystrokes or clicks go to another app.
-    try {$Window.SetFocus()} catch {return $false}
+    try {$Window.SetFocus()} catch { # A top-level Electron window may not accept UIA focus.
+    }
     for($attempt=0;$attempt -lt 10;$attempt++){
+        if([PocketDesktop]::GetForegroundWindow() -eq $handle){return $true}
+        Start-Sleep -Milliseconds 100
+    }
+    if(!$Adapter -or !$Adapter.taskbarId){return $false}
+    return Set-TaskbarWindowForeground $Window $Adapter
+}
+function Set-TaskbarWindowForeground($Window,$Adapter) {
+    $handle=[IntPtr]$Window.Current.NativeWindowHandle
+    if([PocketDesktop]::GetForegroundWindow() -eq $handle){return $true}
+    if(Get-DesktopHealth){return $false}
+    $trayHandle=[PocketDesktop]::FindWindow('Shell_TrayWnd',$null)
+    if($trayHandle -eq [IntPtr]::Zero){return $false}
+    $tray=[Windows.Automation.AutomationElement]::FromHandle($trayHandle)
+    $shell=Get-Process -Id $tray.Current.ProcessId -ErrorAction SilentlyContinue
+    if(!$shell -or $shell.Path -ine (Join-Path $env:SystemRoot explorer.exe) -or $shell.SessionId -ne [Diagnostics.Process]::GetCurrentProcess().SessionId){return $false}
+    $buttons=@(Get-UiSnapshot $tray|Where-Object { $_.role -eq 'Button' -and $_.automationId -ceq $Adapter.taskbarId -and $_.enabled -and !$_.offscreen })
+    if($buttons.Count -ne 1){return $false}
+    $button=$buttons[0];$point=[Windows.Point]::new(0,0)
+    if(!$button.raw.TryGetClickablePoint([ref]$point)){
+        $bounds=$button.raw.Current.BoundingRectangle
+        if($bounds.IsEmpty -or $bounds.Width -le 0 -or $bounds.Height -le 0){return $false}
+        $point=[Windows.Point]::new($bounds.Left+$bounds.Width/2,$bounds.Top+$bounds.Height/2)
+    }
+    if($button.raw.Current.AutomationId -cne $Adapter.taskbarId){return $false}
+    $hit=[Windows.Automation.AutomationElement]::FromPoint($point)
+    # Windows 11 may expose only the shell root for point hit-testing.
+    $pointOnTray=($hit.Current.NativeWindowHandle -eq $trayHandle.ToInt64())
+    $matched=$false
+    for($depth=0;$hit -and $depth -lt 12;$depth++){
+        if($hit.Current.AutomationId -ceq $Adapter.taskbarId){$matched=$true;break}
+        $hit=[Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($hit)
+    }
+    if(!$matched -and !$pointOnTray){return $false}
+    # One real click on the exact shell app button, never on an occluded app surface.
+    if(![PocketDesktop]::ClickTaskbar($trayHandle,$handle,[int]$point.X,[int]$point.Y)){return $false}
+    for($attempt=0;$attempt -lt 20;$attempt++){
         if([PocketDesktop]::GetForegroundWindow() -eq $handle){return $true}
         Start-Sleep -Milliseconds 100
     }
@@ -304,7 +353,7 @@ function Get-AppWindow($App,$Adapter) {
     if ($handles.Count -ne 1) { throw '无法唯一识别当前用户会话中的应用主窗口，请关闭额外窗口或手动启动应用。' }
     $hwnd=[IntPtr]$handles[0]
     $window=[Windows.Automation.AutomationElement]::FromHandle($hwnd)
-    if (!(Set-AppWindowForeground $window)) { throw 'Windows 未允许目标应用获得前台焦点，请在电脑点击该应用窗口后重试；未输入或发送。' }
+    if (!(Set-AppWindowForeground $window $Adapter)) { throw 'Windows 未允许目标应用获得前台焦点，请在电脑点击该应用窗口后重试；未输入或发送。' }
     Start-Sleep -Milliseconds 500
     return $window
 }

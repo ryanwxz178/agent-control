@@ -1,5 +1,6 @@
 {
   "workbuddy": {
+    "taskbarId": "Appid: WorkBuddy.WorkBuddy",
     "processNames": [
       "WorkBuddy"
     ],

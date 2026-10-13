@@ -141,3 +141,5 @@ Windows WorkBuddy 桌面附件发送核对修复：Chromium 插入附件后可�
 此项仅需更新并重启 Windows 桌面桥接，手机 APK 无需再次更新。
 
 Windows 桥接在后台 SetForegroundWindow 被拒绝时，增加目标窗口自身 UI Automation SetFocus 恢复，最多等待 1 秒并核对目标 HWND；不向其他应用发送键鼠输入。仍未获得前台则停止，错误明确提示点击目标窗口，保证未输入或发送。150 项 Windows 逻辑检查通过。
+
+2026-10-13：WorkBuddy 前台恢复新增精确任务栏 AppID 回退，实机从 Codex HWND 789792 切换至 WorkBuddy HWND 134114，通过生产 Set-TaskbarWindowForeground 路径（463ms）；无匹配 AppID 与无效 Shell 句柄均被拒绝且焦点不变。150 项现有 Windows 检查通过。只激活窗口，未读取、清除或补发用户草稿。此项更新 Windows 桥接，不修改手机 APK。
