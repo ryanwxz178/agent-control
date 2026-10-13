@@ -139,3 +139,5 @@ WorkBuddy CLI 大图片与通知双向管道回压已修复。原生 Windows 夹
 
 Windows WorkBuddy 桌面附件发送核对修复：Chromium 插入附件后可能省略空白段落对应的 UIA Text 叶子。先核对文字叶子，只有换行存在差异时才用完整输入框值恢复换行，并逐个排除唯一、已确认的附件标签；文字空格、真实换行改变、缺失或重复文件名仍拒绝发送。实机现有失败草稿只读验收：文字和附件均通过核对；145 项 Windows 逻辑检查通过。
 此项仅需更新并重启 Windows 桌面桥接，手机 APK 无需再次更新。
+
+Windows 桥接在后台 SetForegroundWindow 被拒绝时，增加目标窗口自身 UI Automation SetFocus 恢复，最多等待 1 秒并核对目标 HWND；不向其他应用发送键鼠输入。仍未获得前台则停止，错误明确提示点击目标窗口，保证未输入或发送。150 项 Windows 逻辑检查通过。

@@ -273,6 +273,18 @@ function Invoke-UiButton($Node,$Window,[switch]$Ending) {
     [PocketDesktop]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
     [PocketDesktop]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
 }
+function Set-AppWindowForeground($Window) {
+    $handle=[IntPtr]$Window.Current.NativeWindowHandle
+    if([PocketDesktop]::Activate($handle)){return $true}
+    # Use the target application's accessibility provider when Windows declines
+    # background SetForegroundWindow. No keystrokes or clicks go to another app.
+    try {$Window.SetFocus()} catch {return $false}
+    for($attempt=0;$attempt -lt 10;$attempt++){
+        if([PocketDesktop]::GetForegroundWindow() -eq $handle){return $true}
+        Start-Sleep -Milliseconds 100
+    }
+    return $false
+}
 function Get-AppWindow($App,$Adapter) {
     $session=[Diagnostics.Process]::GetCurrentProcess().SessionId
     function Find-AppWindows {
@@ -291,9 +303,10 @@ function Get-AppWindow($App,$Adapter) {
     }
     if ($handles.Count -ne 1) { throw '无法唯一识别当前用户会话中的应用主窗口，请关闭额外窗口或手动启动应用。' }
     $hwnd=[IntPtr]$handles[0]
-    if (![PocketDesktop]::Activate($hwnd)) { throw '无法将目标应用切到前台，请先在电脑打开该应用后重试。' }
+    $window=[Windows.Automation.AutomationElement]::FromHandle($hwnd)
+    if (!(Set-AppWindowForeground $window)) { throw 'Windows 未允许目标应用获得前台焦点，请在电脑点击该应用窗口后重试；未输入或发送。' }
     Start-Sleep -Milliseconds 500
-    return [Windows.Automation.AutomationElement]::FromHandle($hwnd)
+    return $window
 }
 function Get-ConversationTranscript($Chat) {
     return (Normalize-Message (($Chat.nodes | Where-Object { $_.role -eq 'Text' } | ForEach-Object { $_.name }) -join "`n"))

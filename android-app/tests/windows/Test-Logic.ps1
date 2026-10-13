@@ -434,6 +434,25 @@ public static class ClickPointFixtureDesktop {
         Assert ([ClickPointFixtureDesktop]::PickerQueries -eq 1 -and [ClickPointFixtureDesktop]::UnsafeCalls -eq 0) 'attachment hover failure stops before pointer movement or opening a file picker'
     }
 }
+Add-Type -TypeDefinition @'
+public static class ForegroundFixture {
+ public static bool NativeSuccess; public static System.IntPtr Foreground;
+ public static bool Activate(System.IntPtr handle){return NativeSuccess;}
+ public static System.IntPtr GetForegroundWindow(){return Foreground;}
+}
+'@
+$foregroundAst=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Set-AppWindowForeground'},$true)
+Invoke-Expression $foregroundAst.Extent.Text.Replace('[PocketDesktop]','[ForegroundFixture]')
+$focusWindow=[pscustomobject]@{Current=@{NativeWindowHandle=123};Attempts=0;Grant=$true}
+$focusWindow|Add-Member ScriptMethod SetFocus {$this.Attempts++;if($this.Grant){[ForegroundFixture]::Foreground=[IntPtr]123}}
+[ForegroundFixture]::NativeSuccess=$true
+Assert (Set-AppWindowForeground $focusWindow) 'native activation success requires no accessibility input'
+Assert ($focusWindow.Attempts -eq 0) 'successful native activation does not repeat focus'
+[ForegroundFixture]::NativeSuccess=$false
+Assert (Set-AppWindowForeground $focusWindow) 'accessibility focus fallback confirms exact target foreground after native rejection'
+Assert ($focusWindow.Attempts -eq 1) 'fallback requests target focus once without keyboard or mouse input'
+$focusWindow.Grant=$false;[ForegroundFixture]::Foreground=[IntPtr]456
+Assert (!(Set-AppWindowForeground $focusWindow)) 'another foreground window cannot satisfy target focus confirmation'
 $conversationWriter=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Save-DesktopConversation'},$true)
 Invoke-Expression $conversationWriter.Extent.Text
 $conversationFolder=Join-Path ([IO.Path]::GetTempPath()) ('orca-conversation-test-'+[Guid]::NewGuid().ToString('N'))
