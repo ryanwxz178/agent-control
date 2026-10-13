@@ -226,6 +226,20 @@ $wrappedFileNodes[4]|Add-Member className 'phrase-content-wrapper'
 $wrappedFileNodes[4]|Add-Member ariaRole 'button'
 $wrappedFileNodes[5]|Add-Member className '_tag_h25vi_19 _fileTag_h25vi_111 _inlineTag_h25vi_149'
 Assert (Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA)) 'observed named sortable wrapper confirms its sole unnamed file tag without a Text leaf'
+$multilineNodes=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' ''),(Node 3 2 'Text' '解读下图片'),(Node 4 2 'Text' "`n"),(Node 5 2 'Text' '[Agent Control request fixture]'),(Node 6 2 'Button' ([IO.Path]::GetFileName($namedFileA.path))),(Node 7 6 'Group' ''))
+$multilineNodes[6]|Add-Member className 'phrase-content-wrapper'
+$multilineNodes[7]|Add-Member className '_fileTag_h25vi_111'
+$multilinePrompt="解读下图片`n`n[Agent Control request fixture]"
+$multilineNodes[2].value="解读下图片`n$([char]0xFEFF)`n[Agent Control request fixture]`n$([IO.Path]::GetFileName($namedFileA.path))`n$([char]0xFEFF)`n"
+Assert (Test-ComposerPrompt $multilineNodes $multilineNodes[2] $profiles.workbuddy $multilinePrompt) 'observed WorkBuddy empty paragraph omitted from Text leaves is verified by complete editor value'
+$multilineNodes[2].value=$multilineNodes[2].value.Replace("图片`n$([char]0xFEFF)`n","图片`n")
+Assert (!(Test-ComposerPrompt $multilineNodes $multilineNodes[2] $profiles.workbuddy $multilinePrompt)) 'actual missing blank line is rejected rather than normalizing away instruction changes'
+$multilineNodes[2].value="解读 下图片`n`n[Agent Control request fixture]`n$([IO.Path]::GetFileName($namedFileA.path))"
+Assert (!(Test-ComposerPrompt $multilineNodes $multilineNodes[2] $profiles.workbuddy $multilinePrompt)) 'complete editor fallback rejects changed instruction spaces'
+$multilineNodes[2].value=$multilinePrompt+"`n"+([IO.Path]::GetFileName($namedFileA.path))+"`n"+([IO.Path]::GetFileName($namedFileA.path))
+Assert (!(Test-ComposerPrompt $multilineNodes $multilineNodes[2] $profiles.workbuddy $multilinePrompt)) 'ambiguous duplicate filename cannot erase user text during fallback'
+$multilineNodes[2].value=$multilinePrompt+"`nwrong-file.png"
+Assert (!(Test-ComposerPrompt $multilineNodes $multilineNodes[2] $profiles.workbuddy $multilinePrompt)) 'missing exact file token in complete editor value rejects fallback'
 $wrappedFileNodes[4].className='phrase-content-wrapper-extra'
 Assert (!(Test-ComposerFilesReady $wrappedFileNodes $wrappedFileNodes[2] $profiles.workbuddy @($namedFileA))) 'wrapper fallback requires the exact observed class token'
 $wrappedFileNodes[4].className='phrase-content-wrapper';$wrappedFileNodes[4].parent=1

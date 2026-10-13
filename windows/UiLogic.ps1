@@ -68,7 +68,30 @@ function Test-ComposerPrompt($Nodes,$Editor,$Adapter,[string]$Prompt) {
     # UIA inserts zero-width caret leaves around Slate inline attachment tokens.
     # Preserve internal spaces/newlines so an edited instruction cannot satisfy this check.
     $actual=(Get-ComposerPlainText $Nodes $Editor $Adapter) -replace '[\u200B\u200C\u200D\u2060\uFEFF]',''
-    return (($actual -replace "`r`n","`n").Trim() -ceq ($Prompt -replace "`r`n","`n").Trim())
+    $actual=($actual -replace "`r`n","`n").Trim()
+    $expected=($Prompt -replace "`r`n","`n").Trim()
+    if($actual -ceq $expected){return $true}
+    # Chromium's Text leaves can omit an empty Slate paragraph after inserting a file.
+    # Only use the full editor value to recover line breaks; other text must still agree.
+    if(($actual -replace "`n",'') -cne ($expected -replace "`n",'')){return $false}
+    $tags=@(Get-ComposerFileTags $Nodes $Editor $Adapter)
+    if(!$tags.Count -or !$Editor.value){return $false}
+    $value=([string]$Editor.value -replace '[\u200B\u200C\u200D\u2060\uFEFF]','') -replace "`r`n","`n"
+    foreach($tag in $tags){
+        $label=[string]$tag.name
+        $parts=@($Nodes|Where-Object { $_.role -eq 'Text' -and (Test-Descendant $_ $tag.index $Nodes) })
+        if($parts.Count){$label=($parts|ForEach-Object {$_.name}) -join ''}
+        elseif(!$label -and $tag.parent -ge 0 -and $tag.parent -lt $Nodes.Count){
+            $parent=$Nodes[[int]$tag.parent]
+            if($parent.className -match '(?:^| )phrase-content-wrapper(?: |$)' -and (Test-Descendant $parent $Editor.index $Nodes)){$label=[string]$parent.name}
+        }
+        if(!$label){return $false}
+        $matches=[regex]::Matches($value,[regex]::Escape($label))
+        # A duplicate in the instruction is ambiguous: never erase user text to make it match.
+        if($matches.Count -ne 1){return $false}
+        $value=$value.Remove($matches[0].Index,$matches[0].Length)
+    }
+    return ($value.Trim() -ceq $expected)
 }
 function Test-ComposerFilesReady($Nodes,$Editor,$Adapter,$Files) {
     $tags=@(Get-ComposerFileTags $Nodes $Editor $Adapter)
