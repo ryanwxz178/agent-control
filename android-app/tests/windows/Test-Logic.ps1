@@ -171,6 +171,44 @@ $observed=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Text' '�
 $observed[11]|Add-Member className '_copyButton_1ncbp_1 '
 $reply=Get-ReplyState $observed $profiles.workbuddy '你好'
 Assert ($reply.sent -and $reply.complete -and $reply.text -ceq '正确回复') 'observed WorkBuddy header repeats the request outside chat; zero-width text runs do not duplicate it'
+# Chromium's list item owns its full text; its Text children can be bold labels only.
+$richNodes=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' '已有草稿'),(Node 3 1 'Group' ''),(Node 4 3 'Text' '当前请求'),(Node 5 3 'Text' '已完成 26s'),(Node 6 3 'Text' '这是'),(Node 7 3 'Text' '商品'),(Node 8 3 'Text' '的截图。'),(Node 9 3 'Text' '基本信息'),(Node 10 3 'List' ''),(Node 11 10 'ListItem' '名称：商品 A；售价 ¥6000'),(Node 12 11 'Text' '名称'),(Node 13 10 'ListItem' '管理：本人；说明 <script> 和 * 字符'),(Node 14 13 'Text' '管理'),(Node 15 3 'Text' '最终结论。'),(Node 16 3 'Button' '复制'),(Node 17 1 'Text' '另一个回复不可读取'),(Node 18 1 'Button' '发送'),(Node 19 2 'Text' '已有草稿不可读取'),(Node 20 1 'Text' '侧边栏不可读取'))
+$richNodes[16]|Add-Member className '_copyButton_1ncbp_1 '
+foreach($index in @(6,7,8)){$richNodes[$index]|Add-Member top 10;$richNodes[$index]|Add-Member height 15}
+$richNodes[9]|Add-Member top 50;$richNodes[9]|Add-Member height 20
+$richNodes[15]|Add-Member top 160;$richNodes[15]|Add-Member height 15
+foreach($index in @(7,9,12,14)){$richNodes[$index]|Add-Member fontWeight 600}
+$richReply=Get-ReplyState $richNodes $profiles.workbuddy '当前请求'
+Assert ($richReply.complete -and $richReply.text.Contains('- **名称**：商品 A；售价 ¥6000')) 'observed list accessibility shape preserves complete body and bold label'
+Assert ($richReply.text.Contains("这是**商品**的截图。`n`n**基本信息**")) 'inline text runs stay in one paragraph and separate bold section remains a section'
+Assert ($richReply.text.Contains('- **管理**：本人；说明 \<script\> 和 \* 字符')) 'rendered list text escapes literal markup while preserving emphasis'
+Assert ([regex]::Matches($richReply.plainText,'名称：商品 A').Count -eq 1) 'list item children never duplicate the authoritative full list text'
+Assert (!$richReply.text.Contains('已有草稿') -and !$richReply.text.Contains('另一个回复') -and !$richReply.text.Contains('侧边栏')) 'rich extraction respects editor navigation and exact reply copy boundary'
+Assert ($richReply.copy.index -eq 16) 'reply copy metadata remains bound to the completed current answer'
+Assert (!(Get-ReplyState $richNodes $profiles.workbuddy '其他请求').sent) 'formatted earlier reply cannot satisfy a different request'
+$unstyledNodes=@($richNodes|ForEach-Object {$_|Select-Object * -ExcludeProperty fontWeight})
+$unstyledReply=Get-ReplyState $unstyledNodes $profiles.workbuddy '当前请求'
+Assert ($unstyledReply.complete -and $unstyledReply.text.Contains('- 名称：商品 A；售价 ¥6000')) 'missing font attributes retain full list content without inventing bold'
+Assert (!$unstyledReply.text.Contains('**')) 'unsupported formatting falls back without guessed font styling'
+$nested=@((Node 0 -1 'Window' ''),(Node 1 0 'List' ''),(Node 2 1 'ListItem' '父项'),(Node 3 2 'List' ''),(Node 4 3 'ListItem' '子项完整正文'),(Node 5 4 'Text' '子项'))
+$nestedReply=Get-ReplyContent $nested[1..5] $nested
+Assert ($nestedReply.text.Contains('  - 子项完整正文')) 'nested list indentation retains child body without repeating its partial leaf'
+$nested[2].name='父项 子项完整正文';$nestedReply=Get-ReplyContent $nested[1..5] $nested
+Assert ([regex]::Matches($nestedReply.plainText,'子项完整正文').Count -eq 1) 'provider including a nested item in its parent name does not duplicate the nested body'
+$ordered=@((Node 0 -1 'Window' ''),(Node 1 0 'List' ''),(Node 2 1 'ListItem' '第三项'))
+$ordered[2]|Add-Member listMarker '3. '
+Assert ((Get-ReplyContent $ordered[1..2] $ordered).text -eq '3. 第三项') 'actual text range number retains ordered list numbering'
+$spanStyle=@{fontWeight=600;italic=$true;strike=$true}
+Assert ((ConvertTo-UiMarkdownSpan '重点' $spanStyle) -eq '~~***重点***~~') 'supported italic bold and deletion attributes combine without altering content'
+Assert ((ConvertTo-UiMarkdownSpan '运行 `x`' @{fontFamily='Consolas'}) -eq '`` 运行 `x` ``') 'literal backticks in code choose a longer inline fence'
+Assert ((ConvertTo-UiMarkdownSpan '****' @{fontFamily='Consolas'}) -eq '` **** `') 'code punctuation is never removed as adjacent emphasis markers'
+Assert ((ConvertTo-UiMarkdownSpan "a`nb" @{fontFamily='Courier New'}) -eq ('```'+"`na`nb`n"+'```')) 'multiline monospace text retains a fenced code block'
+Assert ((ConvertTo-UiMarkdownSpan '链接' @{linkUrl='https://example.test/a'}) -eq '[链接](https://example.test/a)') 'observed hyperlink target is preserved'
+Assert ((ConvertTo-UiMarkdownSpan '链接' @{linkUrl='javascript:alert(1)'}) -eq '链接') 'unknown or active URI never becomes a hyperlink'
+Assert ((ConvertTo-UiMarkdownText '==literal== ~~literal~~ # header - item | cell') -ceq '\=\=literal\=\= \~\~literal\~\~ \# header \- item \| cell') 'rendered literal highlights deletion headings and table markers never acquire new formatting'
+$headed=@((Node 0 -1 'Window' ''),(Node 1 0 'Text' '标题'))
+$headed[1]|Add-Member headingLevel 2
+Assert ((Get-ReplyContent $headed[1..1] $headed).text -eq '## 标题') 'an actual accessibility heading level becomes the matching Markdown heading'
 $fileA=@{path='C:\work\.agent-control-input\11111111-1111-1111-1111-111111111111-报告.pdf';size=3}
 $fileB=@{path='C:\work\.agent-control-input\22222222-2222-2222-2222-222222222222-截图.png';size=4}
 $fileNodes=@((Node 0 -1 'Window' ''),(Node 1 0 'Document' ''),(Node 2 1 'Edit' '' ''),(Node 3 2 'Text' '总结附件'),(Node 4 2 'Group' ''),(Node 5 4 'Text' ([IO.Path]::GetFileName($fileA.path))),(Node 6 2 'Group' ''),(Node 7 6 'Text' ([IO.Path]::GetFileName($fileB.path))))
@@ -376,10 +414,66 @@ Assert ($null -ne $diagnosticWriter) 'production request diagnostic writer is av
 # Compile the P/Invoke helper without invoking Windows APIs on this host.
 $desktopSource=Get-Content "$repo/windows/Desktop.ps1" -Raw -Encoding UTF8
 $desktopAst=[Management.Automation.Language.Parser]::ParseInput($desktopSource,[ref]$tokens,[ref]$parseErrors)
+$transcriptAst=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-ConversationTranscript'},$true)
+$transcriptCheckAst=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-ConversationTranscript'},$true)
+Invoke-Expression $transcriptAst.Extent.Text
+Invoke-Expression $transcriptCheckAst.Extent.Text
+$transcriptFixture=@{nodes=@((Node 0 -1 'Text' '请求'),(Node 1 -1 'ListItem' '标签：完整列表正文'),(Node 2 1 'Text' '标签'))}
+$legacyTranscript=@{transcript=Get-ConversationTranscript $transcriptFixture -Legacy}
+Assert (Test-ConversationTranscript $transcriptFixture $legacyTranscript) 'existing conversation binding without a transcript version retains strict legacy comparison'
+$currentTranscript=@{transcriptVersion=2;transcript=Get-ConversationTranscript $transcriptFixture}
+Assert (Test-ConversationTranscript $transcriptFixture $currentTranscript) 'new conversation binding compares complete v2 transcript'
+$transcriptFixture.nodes[1].name='标签：电脑已改变列表正文'
+Assert (!(Test-ConversationTranscript $transcriptFixture $currentTranscript)) 'v2 conversation rejects changed list body even when bold label is unchanged'
+$legacyTranscript.transcript='其他旧会话'
+Assert (!(Test-ConversationTranscript $transcriptFixture $legacyTranscript)) 'migration never relaxes a mismatched old conversation fingerprint'
+$unsupportedTranscript=@{transcriptVersion=99;transcript=Get-ConversationTranscript $transcriptFixture}
+Assert (!(Test-ConversationTranscript $transcriptFixture $unsupportedTranscript)) 'unknown transcript version never falls through to legacy acceptance'
+$completedTextAst=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-DesktopCompletedText'},$true)
+Invoke-Expression $completedTextAst.Extent.Text
+$script:storeReads=0;$script:storedText='## Original Markdown';$script:storedPrompt=''
+function Get-WorkBuddyStoredReply([string]$Prompt) {$script:storeReads++;$script:storedPrompt=$Prompt;if($null -eq $script:storedText){return $null};return @{text=$script:storedText}}
+$completedState=@{text='Visible fallback';sent=$true;complete=$true}
+Assert ((Get-DesktopCompletedText @{id='workbuddy'} $completedState 'Unique current prompt') -ceq '## Original Markdown' -and $script:storedPrompt -ceq 'Unique current prompt') 'completed visible WorkBuddy request passes its exact prompt to raw Markdown recovery'
+$script:storedText=$null
+Assert ((Get-DesktopCompletedText @{id='workbuddy'} $completedState 'Unique current prompt') -ceq 'Visible fallback') 'unavailable or ambiguous store preserves complete UIA fallback'
+$reads=$script:storeReads
+Assert ((Get-DesktopCompletedText @{id='teleagent'} $completedState 'Unique current prompt') -ceq 'Visible fallback' -and $script:storeReads -eq $reads) 'other applications never read WorkBuddy history'
+Assert ((Get-DesktopCompletedText @{id='workbuddy'} @{text='Pending';sent=$true;complete=$false} 'Unique current prompt') -ceq 'Pending' -and $script:storeReads -eq $reads) 'incomplete visible reply cannot recover completed text from local history'
+Assert ((Get-DesktopCompletedText @{id='workbuddy'} @{text='Unsent';sent=$false;complete=$true} 'Unique current prompt') -ceq 'Unsent' -and $script:storeReads -eq $reads) 'unsent visible request cannot use store authority'
+$script:storedText='x'*150001;$tooLarge=$false
+try {Get-DesktopCompletedText @{id='workbuddy'} $completedState 'Unique current prompt'|Out-Null}catch{$tooLarge=$true}
+Assert $tooLarge 'raw Markdown retains the same bounded reply size as UIA extraction'
 if ($env:OS -eq 'Windows_NT') {
     # Exercise both production point fallbacks in memory. No real element,
     # HWND, pointer movement, file dialog or APP is touched by this fixture.
     Add-Type -AssemblyName WindowsBase,UIAutomationTypes,UIAutomationClient
+    $styleAst=$desktopAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-UiTextStyle'},$true)
+    Invoke-Expression $styleAst.Extent.Text
+    $styleRange=[pscustomobject]@{Weight=600;Italic=$true;Font='Consolas'}
+    $styleRange|Add-Member ScriptMethod GetAttributeValue {
+        param($Attribute)
+        if($Attribute -eq [Windows.Automation.TextPattern]::FontWeightAttribute){return $this.Weight}
+        if($Attribute -eq [Windows.Automation.TextPattern]::IsItalicAttribute){return $this.Italic}
+        if($Attribute -eq [Windows.Automation.TextPattern]::FontNameAttribute){return $this.Font}
+        if($Attribute -eq [Windows.Automation.TextPattern]::StrikethroughStyleAttribute){return 'None'}
+        throw 'Unknown fixture attribute'
+    }
+    $styleRange|Add-Member ScriptMethod GetText {param($Limit) return '7. 当前列表正文'}
+    $styleElement=[pscustomobject]@{OwnPattern=$false;Range=$styleRange;Heading=80052}
+    $styleElement|Add-Member ScriptMethod GetCurrentPropertyValue {param($Property) return $this.Heading}
+    $styleElement|Add-Member ScriptMethod TryGetCurrentPattern {param($Pattern,$Result) $Result.Value=$null;if($this.OwnPattern -and $Pattern -eq [Windows.Automation.TextPattern]::Pattern){$Result.Value=[pscustomobject]@{DocumentRange=$this.Range};return $true};return $false}
+    $styleProvider=[pscustomobject]@{Range=$styleRange;Calls=0}
+    $styleProvider|Add-Member ScriptMethod RangeFromChild {param($Element) $this.Calls++;return $this.Range}
+    $observedStyle=Get-UiTextStyle $styleElement $styleProvider 'Text'
+    Assert ($observedStyle.fontWeight -eq 600 -and $observedStyle.italic -and $observedStyle.fontFamily -eq 'Consolas' -and $observedStyle.headingLevel -eq 2) 'a Text without its own pattern reads only its parent document child range and supported style attributes'
+    Assert ($styleProvider.Calls -eq 1) 'style fallback queries the matched child range once without reading the whole document'
+    $styleElement.OwnPattern=$true
+    $observedStyle=Get-UiTextStyle $styleElement $styleProvider 'ListItem'
+    Assert ($observedStyle.listMarker -eq '7. ' -and $styleProvider.Calls -eq 1) 'list item own text range retains number without querying another container'
+    $styleRange.Weight=[pscustomobject]@{Sentinel='Mixed'}
+    $observedStyle=Get-UiTextStyle $styleElement $styleProvider 'Text'
+    Assert ($observedStyle.fontWeight -eq 0 -and $observedStyle.italic -and $observedStyle.fontFamily -eq 'Consolas') 'mixed UIA weight never becomes guessed bold or suppresses other supported attributes'
     Add-Type -TypeDefinition @'
 using System;
 public static class ClickPointFixtureDesktop {

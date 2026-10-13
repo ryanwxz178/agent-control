@@ -41,7 +41,7 @@ foreach ($folder in @($root,$bridge,$bin)) {
     # asking WinPS 5.1 to rewrite security sections requiring SeSecurityPrivilege.
     if (!(Test-PrivateBridgeAcl (Get-Acl -LiteralPath $folder) $sid)) { Set-Acl -LiteralPath $folder -AclObject $acl }
 }
-foreach ($file in @('Bridge.ps1','Desktop.ps1','UiLogic.ps1','Protocol.ps1','Diagnose.ps1','profiles.json')) {
+foreach ($file in @('Bridge.ps1','Desktop.ps1','UiLogic.ps1','WorkBuddyStore.ps1','Protocol.ps1','Diagnose.ps1','profiles.json')) {
     if ($file -eq 'profiles.json' -and (Test-Path -LiteralPath "$bin\$file")) {
         $existing=Get-Content -LiteralPath "$bin\$file" -Raw -Encoding UTF8 | ConvertFrom-Json
         $defaults=Get-Content -LiteralPath "$PSScriptRoot\$file" -Raw -Encoding UTF8 | ConvertFrom-Json

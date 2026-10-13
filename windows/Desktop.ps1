@@ -229,22 +229,62 @@ public static class PocketDesktop {
 '@ -ReferencedAssemblies System.dll,System.Core.dll,System.Management.dll
 [PocketDesktop]::SetProcessDPIAware() | Out-Null
 . "$PSScriptRoot\UiLogic.ps1"
+. "$PSScriptRoot\WorkBuddyStore.ps1"
 function Get-DesktopHealth {
     if ([Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0) { return '桥接运行在服务会话 Session 0，请在用户桌面启动' }
     if (![PocketDesktop]::Active([Diagnostics.Process]::GetCurrentProcess().SessionId)) { return '用户会话已断开或未处于活动状态' }
     if (![PocketDesktop]::Unlocked()) { return '桌面锁定、UAC 安全桌面或没有交互桌面' }
     return ''
 }
+function Get-UiTextStyle($Element,$TextProvider,[string]$Role) {
+    $style=@{fontWeight=0;fontFamily='';italic=$false;strike=$false;headingLevel=0;listMarker='';linkUrl=''}
+    if($Role -notin @('Text','ListItem','Hyperlink')){return $style}
+    try {
+        $heading=$Element.GetCurrentPropertyValue([Windows.Automation.AutomationProperty]::LookupById(30173))
+        [int]$number=0
+        try {$number=[int]$heading}catch {$number=0}
+        if($number -ge 80051 -and $number -le 80056){$style.headingLevel=$number-80050}
+    } catch { }
+    try {
+        $pattern=$null;$range=$null
+        if($Element.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern,[ref]$pattern)){$range=$pattern.DocumentRange}
+        elseif($TextProvider){$range=$TextProvider.RangeFromChild($Element)}
+        if($range) {
+            # Mixed/unsupported UIA attributes are COM sentinel objects, not numbers.
+            $weight=$range.GetAttributeValue([Windows.Automation.TextPattern]::FontWeightAttribute)
+            [int]$number=0;if([int]::TryParse([string]$weight,[ref]$number)){$style.fontWeight=$number}
+            $style.italic=($range.GetAttributeValue([Windows.Automation.TextPattern]::IsItalicAttribute) -eq $true)
+            $strike=$range.GetAttributeValue([Windows.Automation.TextPattern]::StrikethroughStyleAttribute)
+            $style.strike=([string]$strike -eq 'Single')
+            $font=$range.GetAttributeValue([Windows.Automation.TextPattern]::FontNameAttribute)
+            if($font -is [string]){$style.fontFamily=$font}
+            if($Role -eq 'ListItem') {
+                $prefix=[regex]::Match($range.GetText(150001),'^\s*(\d+[.)])\s+')
+                if($prefix.Success){$style.listMarker=$prefix.Groups[1].Value+' '}
+            }
+        }
+    } catch { }
+    if($Role -eq 'Hyperlink') {
+        try {
+            $pattern=$null
+            if($Element.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$pattern)){$style.linkUrl=[string]$pattern.Current.Value}
+        } catch { }
+    }
+    return $style
+}
 function Get-UiSnapshot($Window) {
     $list = [Collections.Generic.List[object]]::new()
     $walker = [Windows.Automation.TreeWalker]::ControlViewWalker
-    function Visit($Element,[int]$Parent,[int]$Depth) {
+    function Visit($Element,[int]$Parent,[int]$Depth,$TextProvider) {
         if ($Depth -gt 40 -or $list.Count -ge 8000) { throw '应用辅助功能树过大，停止操作' }
         $c = $Element.Current
         if ($null -eq $c.ControlType -or !$c.ControlType.ProgrammaticName) { throw '应用辅助功能提供者返回了无类型控件，请稍后重试诊断；未进行输入或发送。' }
         $index = $list.Count
         $role=$c.ControlType.ProgrammaticName.Replace('ControlType.','')
         $value = ''; $pattern = $null
+        if($role -eq 'Document') {
+            try {if($Element.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern,[ref]$pattern)){$TextProvider=$pattern}}catch { }
+        }
         if ($role -eq 'Edit') {
             if ($Element.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$pattern)) { $value = $pattern.Current.Value }
             elseif ($Element.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern,[ref]$pattern)) { $value = $pattern.DocumentRange.GetText(-1) }
@@ -258,9 +298,10 @@ function Get-UiSnapshot($Window) {
         }
         # .NET Framework's UIA wrapper does not expose every UIA3 property.
         $ariaRole=Get-OptionalUiValue $Element ([Windows.Automation.AutomationProperty]::LookupById(30101))
-        $list.Add([pscustomobject]@{index=$index;parent=$Parent;role=$role;name=$c.Name;className=$c.ClassName;automationId=$c.AutomationId;ariaRole=[string]$ariaRole;enabled=$c.IsEnabled;offscreen=$c.IsOffscreen;value=$value;top=$c.BoundingRectangle.Top;height=$c.BoundingRectangle.Height;raw=$Element})
+        $style=Get-UiTextStyle $Element $TextProvider $role
+        $list.Add([pscustomobject]@{index=$index;parent=$Parent;role=$role;name=$c.Name;className=$c.ClassName;automationId=$c.AutomationId;ariaRole=[string]$ariaRole;enabled=$c.IsEnabled;offscreen=$c.IsOffscreen;value=$value;top=$c.BoundingRectangle.Top;height=$c.BoundingRectangle.Height;fontWeight=$style.fontWeight;fontFamily=$style.fontFamily;italic=$style.italic;strike=$style.strike;headingLevel=$style.headingLevel;listMarker=$style.listMarker;linkUrl=$style.linkUrl;raw=$Element})
         $child=$walker.GetFirstChild($Element)
-        while ($null -ne $child) { Visit $child $index ($Depth+1); $child=$walker.GetNextSibling($child) }
+        while ($null -ne $child) { Visit $child $index ($Depth+1) $TextProvider; $child=$walker.GetNextSibling($child) }
     }
     Visit $Window -1 0
     return $list.ToArray()
@@ -357,8 +398,25 @@ function Get-AppWindow($App,$Adapter) {
     Start-Sleep -Milliseconds 500
     return $window
 }
-function Get-ConversationTranscript($Chat) {
-    return (Normalize-Message (($Chat.nodes | Where-Object { $_.role -eq 'Text' } | ForEach-Object { $_.name }) -join "`n"))
+function Get-ConversationTranscript($Chat,[switch]$Legacy) {
+    return (Normalize-Message (($Chat.nodes | Where-Object { $_.role -eq 'Text' -or (!$Legacy -and $_.role -in @('ListItem','Hyperlink')) } | ForEach-Object { $_.name }) -join "`n"))
+}
+function Test-ConversationTranscript($Chat,$Previous) {
+    if($Previous.transcriptVersion -and $Previous.transcriptVersion -ne 2){return $false}
+    # Already saved phone bindings used Text-only fingerprints. Check that exact
+    # legacy fingerprint once; the next completed turn writes the complete v2 form.
+    return ((Get-ConversationTranscript $Chat -Legacy:(!$Previous.transcriptVersion)) -ceq $Previous.transcript)
+}
+function Get-DesktopCompletedText($App,$State,[string]$Prompt) {
+    $text=[string]$State.text
+    # The local store supplements formatting only after the visible current request
+    # has been confirmed sent and complete; it cannot establish completion itself.
+    if($App.id -eq 'workbuddy' -and $State.sent -and $State.complete) {
+        $stored=Get-WorkBuddyStoredReply -Prompt $Prompt
+        if($stored -and ![string]::IsNullOrWhiteSpace($stored.text)){$text=[string]$stored.text}
+    }
+    if($text.Length -gt 150000){throw '回复超过大小限制'}
+    return $text
 }
 function Wait-DesktopFileMenu($Window,$Step) {
     for($attempt=0;$attempt -lt 16;$attempt++) {
@@ -509,7 +567,7 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
     if ($previous) {
         $chat=Get-ChatScope $nodes $Adapter
         $prior=Get-ReplyState $nodes $Adapter $previous.prompt
-        if (!$prior.sent -or !$prior.complete -or (Get-ConversationTranscript $chat) -cne $previous.transcript) { throw '请在电脑打开此手机会话的原对话后重试；不会自动新建或发送到其他对话' }
+        if (!$prior.sent -or !$prior.complete -or !(Test-ConversationTranscript $chat $previous)) { throw '请在电脑打开此手机会话的原对话后重试；不会自动新建或发送到其他对话' }
         if (Get-EditorValue $chat.editor $Adapter) { throw '原对话输入框有草稿，未覆盖' }
         Write-Event 'status' '正在继续同一个电脑对话'
     } else {
@@ -558,7 +616,7 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
     }
     $send=@($chat.nodes | Where-Object { (Test-AdapterButton $_ $Adapter.send $Adapter.sendClass) -and $_.enabled -and !$_.offscreen })
     if ($send.Count -ne 1) { throw '发送按钮不唯一或未启用，保留草稿，未发送' }
-    $conversationState=@{version=1;app=$App.id;conversationId=$ConversationId;prompt=$Prompt;status='pending';transcript=''}
+    $conversationState=@{version=1;app=$App.id;conversationId=$ConversationId;prompt=$Prompt;status='pending';transcript='';transcriptVersion=2}
     Save-DesktopConversation $conversationPath $conversationState
     $baselineCopies=@($chat.nodes | Where-Object { $_.role -eq 'Button' -and $_.name -match '^(复制|Copy)$' }).Count
     # One invocation only. Never retry an uncertain send.
@@ -604,7 +662,14 @@ function Invoke-DesktopChat($App,$Adapter,[string]$Prompt,[string]$ConversationI
         if ($state.complete -and $state.text -ceq $last) { $stable++ } else { $stable=0 }
         $last=$state.text
         if ($last.Length -gt 150000) { throw '回复超过大小限制' }
-        if ($stable -ge 2) { $conversationState.status='complete';$conversationState.transcript=Get-ConversationTranscript $currentChat;Save-DesktopConversation $conversationPath $conversationState;Write-Event 'desktop.done' $last; return }
+        if ($stable -ge 2) {
+            $last=Get-DesktopCompletedText $App $state $Prompt
+            $conversationState.status='complete'
+            $conversationState.transcript=Get-ConversationTranscript $currentChat
+            Save-DesktopConversation $conversationPath $conversationState
+            Write-Event 'desktop.done' $last
+            return
+        }
     }
     throw '等待回复超时，状态未知；电脑任务可能仍在运行'
 }

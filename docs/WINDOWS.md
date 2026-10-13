@@ -4,6 +4,8 @@ Windows 路径使用原生 OpenSSH / SFTP、PowerShell 5.1 和 UI Automation 桌
 
 ## 两条执行路径
 
+0.5.29 增加 WorkBuddy 原始 Markdown 回复读取：仅在 UIA 已确认当前唯一请求已发送、回复完成并稳定后，才读取绑定同一用户消息、会话与请求 ID 的本地 JSONL 记录。最多枚举 6000 个日志，读取最近 20 分钟更新的文件且合计不超过 20MB；歧义、损坏或未完成记录回退到完整 UIA 文本。UIA 回退按实际字体还原强调并读取完整 ListItem 正文。旧会话严格沿用旧 Text 指纹验证，下一次完成后升级为包含列表正文的 v2 指纹。更新时请将 `WorkBuddyStore.ps1` 与 `Desktop.ps1`、`UiLogic.ps1` 一并通过新版安装器安装并重启桥接。
+
 ```text
 Android → SSH → Windows PowerShell → Agent CLI → JSON 事件 → 手机
 Android → SSH → 当前用户私有请求目录 → 交互桌面 Bridge

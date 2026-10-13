@@ -161,6 +161,89 @@ function Get-ChatScope($Nodes, $Adapter) {
     $inside = @($Nodes | Where-Object { (Test-Descendant $_ $scope.index $Nodes) -and $_.index -ne $editor.index -and !(Test-Descendant $_ $editor.index $Nodes) -and !(Test-Navigation $_ $Nodes) })
     return @{ editor=$editor; nodes=$inside; scope=$scope }
 }
+function ConvertTo-UiMarkdownText([string]$Text) {
+    # UIA names are rendered text, so literal markup must not become HTML or formatting.
+    return (($Text.Replace('\','\\')) -replace '([`*_{}\[\]<>~=#.+!|():-])','\$1')
+}
+function ConvertTo-UiMarkdownSpan([string]$Text,$Style) {
+    if($Style.fontFamily -match '(?i)(?:consolas|courier|menlo|monaco|monospace|cascadia)') {
+        $longest=0;foreach($run in [regex]::Matches($Text,'`+')){$longest=[Math]::Max($longest,$run.Length)}
+        if($Text.Contains("`n")) {$fence='`'*[Math]::Max(3,$longest+1);return $fence+"`n"+$Text+"`n"+$fence}
+        $fence='`'*[Math]::Max(1,$longest+1);return $fence+' '+$Text+' '+$fence
+    }
+    $escaped=ConvertTo-UiMarkdownText $Text
+    if ([double]$Style.fontWeight -ge 600) { $escaped='**'+$escaped+'**' }
+    if ($Style.italic -eq $true) { $escaped='*'+$escaped+'*' }
+    if($Style.strike -eq $true){$escaped='~~'+$escaped+'~~'}
+    if($Style.linkUrl -match '^https?://[^\s<>]+$'){$escaped='['+$escaped+']('+([string]$Style.linkUrl).Replace('(','\(').Replace(')','\)')+')'}
+    return $escaped
+}
+function Get-ReplyContent($Parts,$Nodes) {
+    $atoms=[Collections.Generic.List[object]]::new()
+    foreach($part in $Parts) {
+        if($part.role -notin @('Text','ListItem','Hyperlink') -or ![string]$part.name){continue}
+        # Chromium exposes full list text on ListItem.name, with only bold spans
+        # as Text children. Reading those children alone loses the actual answer.
+        $covered=$false
+        foreach($atom in $atoms) {
+            if($atom.node.role -in @('ListItem','Hyperlink') -and (Test-Descendant $part $atom.node.index $Nodes)) {
+                if($part.role -ne 'ListItem' -or ([string]$atom.node.name).Contains([string]$part.name)){$covered=$true;break}
+            }
+        }
+        if(!$covered) {
+            $merge=$false
+            if($atoms.Count -and $part.role -eq 'Text') {
+                $last=$atoms[$atoms.Count-1]
+                $sameLine=($null -eq $part.top -and $null -eq $last.node.top) -or ($null -ne $part.top -and $null -ne $last.node.top -and ![double]::IsInfinity([double]$part.top) -and ![double]::IsInfinity([double]$last.node.top) -and [Math]::Abs([double]$part.top-[double]$last.node.top) -le 2)
+                $merge=($last.node.role -eq 'Text' -and $last.node.parent -eq $part.parent -and $sameLine -and [double]$last.node.fontWeight -eq [double]$part.fontWeight -and $last.node.italic -eq $part.italic -and $last.node.strike -eq $part.strike -and [string]$last.node.fontFamily -ceq [string]$part.fontFamily -and [string]$last.node.linkUrl -ceq [string]$part.linkUrl -and [int]$last.node.headingLevel -eq 0 -and [int]$part.headingLevel -eq 0)
+                if($merge){$last.text+=[string]$part.name}
+            }
+            if(!$merge){$atoms.Add(@{node=$part;text=[string]$part.name})}
+        }
+    }
+    $rich=@($atoms|Where-Object {$_.node.role -eq 'ListItem' -or [double]$_.node.fontWeight -ge 600 -or $_.node.italic -eq $true -or $_.node.strike -eq $true -or $_.node.fontFamily -match '(?i)(?:consolas|courier|menlo|monaco|monospace|cascadia)' -or $_.node.linkUrl -match '^https?://' -or [int]$_.node.headingLevel -gt 0}).Count -gt 0
+    $plain='';$markdown='';$previous=$null
+    foreach($atom in $atoms) {
+        $node=$atom.node;$text=[string]$atom.text;$span=$text
+        if($rich) {
+            if($node.role -eq 'ListItem') {
+                $span='';$offset=0
+                foreach($child in @($Parts|Where-Object {$_.role -eq 'Text' -and (Test-Descendant $_ $node.index $Nodes)})) {
+                    if(![string]$child.name){continue}
+                    $at=$text.IndexOf([string]$child.name,$offset,[StringComparison]::Ordinal)
+                    if($at -lt 0){continue}
+                    $span+=(ConvertTo-UiMarkdownText $text.Substring($offset,$at-$offset))+(ConvertTo-UiMarkdownSpan $child.name $child)
+                    $offset=$at+([string]$child.name).Length
+                }
+                $span+=ConvertTo-UiMarkdownText $text.Substring($offset)
+            } else {$span=ConvertTo-UiMarkdownSpan $text $node}
+        }
+        $separator=''
+        $list=($node.role -eq 'ListItem')
+        if($previous) {
+            if($list -or $previous.role -eq 'ListItem') {
+                if($list -and $previous.role -eq 'ListItem' -and $node.parent -eq $previous.parent){$separator="`n"}else{$separator="`n`n"}
+            } elseif($null -ne $node.top -and $null -ne $previous.top -and ![double]::IsInfinity([double]$node.top) -and ![double]::IsInfinity([double]$previous.top) -and [double]$node.top -gt [double]$previous.top+[Math]::Max(2,[double]$previous.height/2)) {
+                if($rich -and [double]$node.top -gt [double]$previous.top+[double]$previous.height+8){$separator="`n`n"}else{$separator="`n"}
+            }
+        }
+        $plain+=$separator+$text
+        if($list) {
+            [int]$depth=0;[int]$at=$node.parent;$hops=0
+            while($at -ge 0) {
+                if(++$hops -gt $Nodes.Count -or $at -ge $Nodes.Count){throw '回复列表父节点链无效'}
+                if($Nodes[$at].role -eq 'ListItem'){$depth++};$at=$Nodes[$at].parent
+            }
+            $indent='  '*$depth
+            $marker='- ';if($node.listMarker -match '^\d+[.)] $'){$marker=[string]$node.listMarker}
+            $span=$indent+$marker+($span -replace "\r?\n",("`n"+$indent+'  '))
+        } elseif([int]$node.headingLevel -ge 1 -and [int]$node.headingLevel -le 6) {
+            $span=('#'*[int]$node.headingLevel)+' '+$span
+        }
+        $markdown+=$separator+$span;$previous=$node
+    }
+    return @{text=$markdown;plainText=$plain}
+}
 function Get-ReplyState($Nodes, $Adapter, [string]$Prompt) {
     $chat = Get-ChatScope $Nodes $Adapter
     $items = @($chat.nodes)
@@ -188,14 +271,9 @@ function Get-ReplyState($Nodes, $Adapter, [string]$Prompt) {
         # WorkBuddy renders its completed header before the answer, then a copy toolbar.
         $ends=@($items | Where-Object { $_.index -gt $boundary -and (Test-AdapterButton $_ $Adapter.replyEndName $Adapter.replyEndClass) })
         if ($ends.Count -eq 0) { return @{sent=$true;complete=$false;text='';busy=$busy} }
-        $parts=@($textNodes | Where-Object { $_.index -gt $boundary -and $_.index -lt $ends[0].index -and !(Test-ReplyDecoration $_ $Nodes $Adapter) })
-        $reply='';$previous=$null
-        foreach ($part in $parts) {
-            # Chromium can split a single line into many Text nodes, even single characters.
-            if ($previous -and $null -ne $part.top -and $null -ne $previous.top -and [double]$part.top -gt [double]$previous.top+[Math]::Max(2,[double]$previous.height/2)) { $reply+="`n" }
-            $reply+=$part.name;$previous=$part
-        }
-        return @{sent=$true;complete=(!$busy -and ![string]::IsNullOrWhiteSpace($reply));text=$reply;busy=$busy}
+        $parts=@($items | Where-Object { $_.index -gt $boundary -and $_.index -lt $ends[0].index -and !(Test-ReplyDecoration $_ $Nodes $Adapter) -and (Test-MessageText $_ $Nodes $Adapter $chat.scope.index $messageCopies) })
+        $reply=Get-ReplyContent $parts $Nodes
+        return @{sent=$true;complete=(!$busy -and ![string]::IsNullOrWhiteSpace($reply.text));text=$reply.text;plainText=$reply.plainText;copy=$ends[0];busy=$busy}
     }
     $reply = @($textNodes | Where-Object { $_.index -gt $end -and $_.index -lt $boundary -and !(Test-ReplyDecoration $_ $Nodes $Adapter) } | ForEach-Object { $_.name }) -join "`n"
     return @{ sent=$true; complete=(!$busy -and ![string]::IsNullOrWhiteSpace($reply)); text=$reply; busy=$busy }

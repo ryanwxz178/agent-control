@@ -1,6 +1,8 @@
 # 本机 Android 与 Windows 接入
 
-本次产物：`dist/Agent-Control-0.5.22.apk`，Android 8.0 及以上。该修复版延用上一版本机签名，可覆盖本次提供的旧版并保留手机配置。若手机已装其他签名的同包名应用，需要先备份手机应用内配置，再自行卸载旧版后安装。本地签名材料位于 `android-app/.signing`，不提交或分享。
+本次产物：`dist/Agent-Control-0.5.29.apk`，Android 8.0 及以上。该修复版延用上一版本机签名，可覆盖本次提供的旧版并保留手机配置。若手机已装其他签名的同包名应用，需要先备份手机应用内配置，再自行卸载旧版后安装。本地签名材料位于 `android-app/.signing`，不提交或分享。
+
+0.5.29 补齐手机回复格式，并修复 Windows WorkBuddy 列表正文丢失。需安装新版 APK 并更新 Windows Bridge；格式支持和验证见 [README 回复格式](../README.md#回复格式)。此前保存的纯文本消息不会自动恢复格式。下文保留各版本的接入与验收记录。
 
 0.5.22 新增 Windows TeleAgent 的 HTTP 后台 CLI 包装。本机 TeleAgent 2.7.0 / 后台 1.2.27 已取得真实模型回复 **47 × 89 = 4183**，生产 PocketEngine → JSch SSH/SFTP 也已取得 **53 × 97 = 5141**，标准输入输出返回回复与完成事件，无 GUI 操作或桌面回退。需当前 SSH 登录的 Windows 用户已经登录 TeleAgent；每次使用独立临时数据库与后台，不接管桌面会话。权限问答已有离线测试，实体 Android 尚未验收。详见 [当前 CLI 支持与验证范围](CLI-SUPPORT.md)。
 
@@ -143,3 +145,11 @@ Windows WorkBuddy 桌面附件发送核对修复：Chromium 插入附件后可�
 Windows 桥接在后台 SetForegroundWindow 被拒绝时，增加目标窗口自身 UI Automation SetFocus 恢复，最多等待 1 秒并核对目标 HWND；不向其他应用发送键鼠输入。仍未获得前台则停止，错误明确提示点击目标窗口，保证未输入或发送。150 项 Windows 逻辑检查通过。
 
 2026-10-13：WorkBuddy 前台恢复新增精确任务栏 AppID 回退，实机从 Codex HWND 789792 切换至 WorkBuddy HWND 134114，通过生产 Set-TaskbarWindowForeground 路径（463ms）；无匹配 AppID 与无效 Shell 句柄均被拒绝且焦点不变。150 项现有 Windows 检查通过。只激活窗口，未读取、清除或补发用户草稿。此项更新 Windows 桥接，不修改手机 APK。
+
+## 0.5.29 回复格式（2026-10-13）
+
+Windows WorkBuddy 的 UIA `Text` 叶子只包含部分粗体标签，完整列表正文位于 `ListItem`，导致手机先前丢失正文。新增完整列表提取和实际字体属性转换；已完成且稳定的唯一当前请求优先读取严格绑定的本地原始 Markdown。包装文本只匹配明确的 `user_query` 区域，系统提醒中的历史请求不能成为读取依据。记录不可用时保留完整 UIA 回退，旧手机会话指纹保持兼容。
+
+现有真实回复只读验证保留 9 个完整列表项；原始 Markdown 710 字符、11 处强调。未触发模型请求或修改电脑草稿。手机生产页面在 390px 和 320px 宽度验证标题、列表、强调、代码高亮、复制原文、表格横向滚动及深色模式；聊天历史滚动回归通过。186 项 Windows 桥接逻辑检查、42 项原始记录绑定检查通过。
+
+本机 Windows 桥接已空闲更新并以普通权限重启，`ready=true`、`busy=false`，三个更新运行文件与源码摘要一致。桥接 ZIP 已同步并核对包含 `WorkBuddyStore.ps1` 的核心文件摘要。0.5.29 APK 完成 v2/v3 签名、zipalign 及全部 49 个打包资源摘要校验。手机仍需安装 APK；此轮未连接实体手机验收，历史纯文本消息不会由新渲染器自动重建。

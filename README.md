@@ -2,7 +2,7 @@
 
 Android 聊天客户端，通过 SSH 连接电脑上的 AI Agent，支持确认交互、附件、桌面会话连续性及可选电脑持久任务服务。
 
-当前源码版本：**0.5.28**（Android versionCode 54）。最低 Android 8.0 / API 26，目标 API 35。
+当前源码版本：**0.5.29**（Android versionCode 55）。最低 Android 8.0 / API 26，目标 API 35。
 
 ## 项目结构
 
@@ -23,7 +23,7 @@ bash android-app/fetch-dependencies.sh
 bash android-app/build.sh
 ```
 
-产物：`dist/Agent-Control-0.5.28.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
+产物：`dist/Agent-Control-0.5.29.apk`。依赖下载脚本校验 SHA-256；桌面服务 JAR 由构建脚本生成。无需 Gradle、Android Studio 或开发服务器。
 
 Windows 本机构建（PowerShell 7）：
 
@@ -49,6 +49,14 @@ bash android-app/tests/run.sh
 UI 测试需要 Playwright 和 Chrome；实机、SSH、Windows 桌面测试需要自行配置设备、Agent 登录、授权和测试目录。部分历史实机脚本含原开发环境路径，运行前须替换。逻辑测试通过不等于物理手机收发验收。
 
 ## 可选组件
+
+### 回复格式
+
+0.5.29 的手机回复支持标题、粗体、斜体、删除线、标记高亮、嵌套有序/无序列表、任务列表、引用、链接、横向滚动表格、行内代码及带语言标签和复制按钮的代码块。常用语言代码高亮随 APK 离线提供；未知语言及大代码块保留完整原文。复制整条回复保留 Markdown 源文本。
+
+Windows WorkBuddy 在确认当前请求已发送、回复已完成后，优先从严格绑定同一请求的本地会话记录读取原始 Markdown；记录不可用时读取 UIA 的完整列表正文及实际字体格式。该回退修复列表只剩粗体标签、正文丢失的问题，并兼容原有手机会话绑定。需同时更新 APK 和 Windows Bridge；历史消息已保存为纯文本或缺失的内容不会由渲染器自动恢复。真实现有 WorkBuddy 回复已只读验证：9 个列表项和强调内容完整显示，未重发模型请求。
+
+格式测试：`node android-app/tests/reply-markdown.test.cjs`；在 `android-app` 目录运行 `node tests/reply-format-ui.test.cjs`（需 Playwright 和 Chrome）。Windows 请求绑定与提取测试：`powershell.exe -NoProfile -File android-app/tests/windows/Test-WorkBuddyStore.ps1` 和 `powershell.exe -NoProfile -File android-app/tests/windows/Test-Logic.ps1`。
 
 ### 手机上传文件对话
 

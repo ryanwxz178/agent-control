@@ -16,4 +16,5 @@ The build toolchain (Android SDK and JDK), native test instrumentation, SSH test
 
 - OpenMuse — MIT license; adapted mobile chat interactions and unmodified browser worker sources. Notices are bundled in `assets/LICENSE-OpenMuse` and `desktop-service/browser/LICENSE-OpenMuse`.
 - markdown-it 14.1.0 — MIT license; browser distribution and license bundled in Android assets.
+- Highlight.js 11.12.0 — BSD 3-Clause license; pinned common-language browser build from the official highlightjs/cdn-release repository, bundled for offline code highlighting. License: `assets/licenses/LICENSE-highlight.js`.
 - Playwright — Apache 2.0; optional computer browser dependency installed by npm, not embedded with Chromium in the APK.

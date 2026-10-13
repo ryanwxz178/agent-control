@@ -27,15 +27,7 @@ const taskSeen=new Map();
 const taskLabels={queued:'等待开始',running:'正在执行',waiting_approval:'等待确认',waiting_input:'等待补充',scheduled:'定期检查',paused:'已暂停',succeeded:'已完成',failed:'未完成',cancelled:'已取消',unverifiable:'状态待确认'};
 const liveTask=t=>['queued','running','waiting_approval','waiting_input'].includes(t.status);
 const currentTasks=()=>serviceTasks.filter(t=>t.request.conversationId===state.conversationId);
-const markdown=window.markdownit({html:false,linkify:true,breaks:true,typographer:false});
-markdown.renderer.rules.image=(tokens,index)=>markdown.utils.escapeHtml(tokens[index].content||'图片请从附件查看');
-const defaultLink=markdown.renderer.rules.link_open||((tokens,index,options,env,self)=>self.renderToken(tokens,index,options));
-markdown.renderer.rules.link_open=(tokens,index,options,env,self)=>{
-  const token=tokens[index],url=token.attrGet('href');
-  try{const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol))token.attrSet('href','#');}
-  catch(_){token.attrSet('href','#');}
-  token.attrSet('rel','noopener noreferrer');return defaultLink(tokens,index,options,env,self);
-};
+const markdown=window.createReplyMarkdown(window.markdownit,window.hljs);
 const originalUpdate=updateMessage;
 const originalExtras=renderExtras;
 renderExtras=function(node,message){return withChatScroll(()=>{
@@ -53,8 +45,13 @@ updateMessage=function(node,message){
   if(!String(message.status||'').startsWith('失败'))node.querySelector('.content').innerHTML=markdown.render(message.text||'');
   const content=node.querySelector('.content');content.classList.add('markdown');
   for(const pre of content.querySelectorAll('pre')){
+    const code=pre.querySelector('code'),language=[...(code?.classList||[])].find(name=>name.startsWith('language-'))?.slice(9);
+    const label=document.createElement('span');label.className='code-language';label.textContent=language||'代码';pre.append(label);
     const button=document.createElement('button');button.className='code-copy';button.textContent='复制';button.setAttribute('aria-label','复制代码');
-    button.onclick=()=>copyReply(pre.querySelector('code')?.textContent||pre.textContent);pre.append(button);
+    button.onclick=()=>copyReply(code?.textContent||'');pre.append(button);
+  }
+  for(const table of content.querySelectorAll('table')){
+    const viewport=document.createElement('div');viewport.className='table-viewport';viewport.tabIndex=0;viewport.setAttribute('role','region');viewport.setAttribute('aria-label','表格，可横向滚动');table.replaceWith(viewport);viewport.append(table);
   }
   const footer=node.querySelector('.message-footer');
   if(footer&&!footer.querySelector('.task-origin')&&message.taskId){const label=document.createElement('button');label.className='task-origin';label.textContent='查看任务';label.onclick=()=>openTaskSheet('tasks');footer.append(label);}
